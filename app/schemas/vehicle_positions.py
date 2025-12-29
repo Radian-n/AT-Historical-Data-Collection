@@ -1,3 +1,5 @@
+"""Schema definition for vehicle positions data."""
+
 import json
 
 import pyarrow as pa
@@ -6,6 +8,8 @@ from app.schemas.base import BaseColumns
 
 
 class VehiclePositionColumns(BaseColumns):
+    """Column definitions and schema for vehicle positions table."""
+
     POLL_TIME = "poll_time"
     FEED_TIMESTAMP = "feed_timestamp"
     VEHICLE_ID = "vehicle_id"
@@ -29,15 +33,19 @@ class VehiclePositionColumns(BaseColumns):
     FEED_HOUR = "feed_hour"
 
     @classmethod
-    def dedupe_keys(cls):
+    def dedupe_keys(cls) -> list[str]:
+        """Return columns used to deduplicate vehicle position records."""
         return [cls.VEHICLE_ID, cls.FEED_TIMESTAMP]
 
     @classmethod
-    def partition_cols(cls):
+    def partition_cols(cls) -> list[str]:
+        """Return columns used to partition parquet files."""
         return [cls.FEED_DATE, cls.FEED_HOUR, cls.ROUTE_ID]
 
     @classmethod
-    def schema(cls):
+    def schema(cls) -> pa.Schema:
+        """Return the PyArrow schema for vehicle positions."""
+        partition_cols_json = json.dumps(cls.partition_cols()).encode("utf-8")
         return pa.schema(
             [
                 # Timestamps
@@ -66,6 +74,6 @@ class VehiclePositionColumns(BaseColumns):
             metadata={
                 b"entity": b"vehicle_positions",
                 b"version": b"1",
-                b"partition_columns": json.dumps(cls.partition_cols()).encode("utf-8"),
+                b"partition_columns": partition_cols_json,
             },
         )

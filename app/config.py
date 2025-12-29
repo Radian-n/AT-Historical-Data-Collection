@@ -1,4 +1,5 @@
-# config.py
+"""Configuration settings for the Auckland Transport data collection app."""
+
 import os
 from pathlib import Path
 from typing import Final
@@ -12,11 +13,11 @@ POLL_INTERVAL_SECONDS: Final[float] = float(
     os.getenv("POLL_INTERVAL_SECONDS", "30.0")
 )
 
-# How many minutes to wait after the end of the hour before writing data
+# How many minutes to wait after the end of the hour before writing data.
 # AT API can include data for ~15 minutes.
-# Therefore, a response at 05:14:30 may still contain information from <5am
+# Therefore, a response at 05:14:30 may still contain information from <5am.
 # TODO: Check if this can be lower now that we're doing incremental dedupes
-SAFE_DELAY_MINS = float(os.getenv("SAFE_DELAY_MINS", "16.0"))
+SAFE_DELAY_MINS: Final[float] = float(os.getenv("SAFE_DELAY_MINS", "16.0"))
 
 # API
 AT_API_KEY: Final[str] = os.getenv("AT_API_KEY", "")
@@ -28,7 +29,6 @@ AT_API_HEADERS: Final[dict[str, str]] = {
     "Accept": "application/x-protobuf",
 }
 
-
 # Storage
-DATA_ROOT = Path("data")
-BUFFER_CHECKPOINT_ROOT = Path("buffer_checkpoint")
+DATA_ROOT: Final[Path] = Path("data")
+BUFFER_CHECKPOINT_ROOT: Final[Path] = Path("buffer_checkpoint")

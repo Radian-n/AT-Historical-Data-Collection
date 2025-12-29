@@ -1,8 +1,19 @@
+"""Utility functions for GTFS data processing."""
+
+import pyarrow as pa
 import pyarrow.compute as pc
 
 
-def derive_feed_partitions(table, timestamp_col="feed_timestamp"):
-    """Add date and hour columns into table for file partitioning"""
+def derive_feed_partitions(table: pa.Table, timestamp_col: str) -> pa.Table:
+    """Add date and hour columns to a table for file partitioning.
+
+    Args:
+        table: PyArrow table containing timestamp data.
+        timestamp_col: Name of the timestamp column to derive from.
+
+    Returns:
+        Table with added 'feed_date' and 'feed_hour' columns.
+    """
     ts = table[timestamp_col]
 
     # Extract date and hour (vectorized)

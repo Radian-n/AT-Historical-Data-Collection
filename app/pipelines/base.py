@@ -1,3 +1,5 @@
+"""Base pipeline class for GTFS-Realtime data ingestion."""
+
 import hashlib
 import logging
 import pickle
@@ -5,6 +7,7 @@ import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -12,8 +15,6 @@ import requests
 from google.protobuf.message import DecodeError
 from google.transit import gtfs_realtime_pb2
 
-from app.schemas.base import BaseColumns
-from app.utils import derive_feed_partitions
 from app.config import (
     AT_API_HEADERS,
     BUFFER_CHECKPOINT_ROOT,
@@ -21,6 +22,8 @@ from app.config import (
     POLL_INTERVAL_SECONDS,
     SAFE_DELAY_MINS,
 )
+from app.schemas.base import BaseColumns
+from app.utils import derive_feed_partitions
 
 
 class BaseRealtimePipeline(ABC):
@@ -80,15 +83,17 @@ class BaseRealtimePipeline(ABC):
         self._hour_buffers, self._hour_seen_keys = self._init_buffers()
 
     @abstractmethod
-    def normalise(self, feed, poll_time) -> list[dict]:
-        """Convert decoded feed entities into normalised row dictionaries
+    def normalise(
+        self, feed: gtfs_realtime_pb2.FeedMessage, poll_time: datetime
+    ) -> list[dict[str, Any]]:
+        """Convert decoded feed entities into normalised row dictionaries.
 
         Method must also convert any timestamp columns required in further
         processing steps into the correct datetime format (UTC).
         """
         raise NotImplementedError
 
-    def run_forever(self):
+    def run_forever(self) -> None:
         """Run the pipeline indefinitely."""
         while True:
             try:
@@ -102,8 +107,8 @@ class BaseRealtimePipeline(ABC):
                 self.log.exception("Unexpected error")
             time.sleep(self.poll_interval)
 
-    def _run_once(self):
-        """Runs a single fetch, normalise, buffer write sequence"""
+    def _run_once(self) -> None:
+        """Run a single fetch, normalise, buffer write sequence."""
         poll_time = datetime.now(timezone.utc)
 
         try:
@@ -142,13 +147,13 @@ class BaseRealtimePipeline(ABC):
         self.log.info(
             "Hour buffer sizes: %s",
             ", ".join(
-                [f"{k}: {len(v)}" for k, v in self._hour_buffers.items()]
+                [f"{k:%Y-%m-%d %H}hr: {len(v)}" for k, v in self._hour_buffers.items()]
             ),
         )
         self.log.info(
             "Hour seen key buffer sizes: %s",
             ", ".join(
-                [f"{k}: {len(v)}" for k, v in self._hour_seen_keys.items()]
+                [f"{k:%Y-%m-%d %H}hr: {len(v)}" for k, v in self._hour_seen_keys.items()]
             ),
         )
 
@@ -157,14 +162,18 @@ class BaseRealtimePipeline(ABC):
 
         self._write_buffer()
 
-    def _decode_feed(self, raw_bytes):
+    def _decode_feed(
+        self, raw_bytes: bytes
+    ) -> gtfs_realtime_pb2.FeedMessage:
         """Decode raw GTFS-Realtime protobuf bytes into a FeedMessage."""
         feed = gtfs_realtime_pb2.FeedMessage()
         feed.ParseFromString(raw_bytes)
         return feed
 
-    def _dedupe(self, rows: list[dict], key_names: list[str]) -> list[dict]:
-        """Deduplicate rows in a list based on key_names"""
+    def _dedupe(
+        self, rows: list[dict[str, Any]], key_names: list[str]
+    ) -> list[dict[str, Any]]:
+        """Deduplicate rows in a list based on key_names."""
         seen = set()
         out = []
         for row in rows:
@@ -176,8 +185,8 @@ class BaseRealtimePipeline(ABC):
                 out.append(row)
         return out
 
-    def _add_to_buffers(self, rows: list[dict]) -> None:
-        """Adds row data to buffer dict, using timestamp hour as key"""
+    def _add_to_buffers(self, rows: list[dict[str, Any]]) -> None:
+        """Add row data to buffer dict, using timestamp hour as key."""
         added_rows = 0
         for row in rows:
             ts = row[self.columns.FEED_TIMESTAMP]
@@ -213,8 +222,8 @@ class BaseRealtimePipeline(ABC):
                 del self._hour_buffers[hour_key]
                 del self._hour_seen_keys[hour_key]
 
-    def _write_parquet(self, rows: list) -> None:
-        """Writes a parquet file partitioned by hour and date"""
+    def _write_parquet(self, rows: list[dict[str, Any]]) -> None:
+        """Write a parquet file partitioned by hour and date."""
         table = pa.Table.from_pylist(rows, schema=self._schema)
         table = derive_feed_partitions(table, self.columns.FEED_TIMESTAMP)
         pq.write_to_dataset(
@@ -231,7 +240,10 @@ class BaseRealtimePipeline(ABC):
 
     def _init_buffers(
         self,
-    ) -> tuple[dict[datetime, list[dict]], dict[datetime, set[tuple]]]:
+    ) -> tuple[
+        dict[datetime, list[dict[str, Any]]],
+        dict[datetime, set[tuple[Any, ...]]],
+    ]:
         """Initialise hour buffers, loading from checkpoint if available."""
         hour_buffers, hour_seen_keys = self._load_buffer_checkpoint()
         if hour_buffers is not None:
@@ -240,7 +252,10 @@ class BaseRealtimePipeline(ABC):
 
     def _load_buffer_checkpoint(
         self,
-    ) -> tuple[dict[datetime, list[dict]] | None, dict[datetime, set[tuple]]]:
+    ) -> tuple[
+        dict[datetime, list[dict[str, Any]]] | None,
+        dict[datetime, set[tuple[Any, ...]]],
+    ]:
         """Load buffer state from pickle checkpoint files.
 
         Returns:
@@ -267,8 +282,8 @@ class BaseRealtimePipeline(ABC):
         return hour_buffers, hour_seen_keys
 
     def _rebuild_seen_keys(
-        self, hour_buffers: dict[datetime, list[dict]]
-    ) -> dict[datetime, set[tuple]]:
+        self, hour_buffers: dict[datetime, list[dict[str, Any]]]
+    ) -> dict[datetime, set[tuple[Any, ...]]]:
         """Rebuild seen keys set from hour buffers."""
         seen_keys = defaultdict(set)
         for hour, rows in hour_buffers.items():
@@ -289,8 +304,10 @@ class BaseRealtimePipeline(ABC):
 
         self.log.debug("Buffer checkpoint saved")
 
-    def _verify_dedupe_keys(self, dedupe_keys, columns) -> None:
-        """Ensure all dedupe keys exist in schema"""
+    def _verify_dedupe_keys(
+        self, dedupe_keys: list[str], columns: list[str]
+    ) -> None:
+        """Ensure all dedupe keys exist in schema."""
         missing_keys: set[str] = set(dedupe_keys) - set(columns)
         if missing_keys:
             raise ValueError(
