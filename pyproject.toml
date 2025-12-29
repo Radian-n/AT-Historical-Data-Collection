@@ -1,0 +1,13 @@
+[project]
+name = "at-historical-data-collection-2"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "gtfs-realtime-bindings>=2.0.0",
+    "protobuf>=6.33.2",
+    "pyarrow>=22.0.0",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+]
