@@ -146,16 +146,11 @@ class BaseRealtimePipeline(ABC):
 
         self._add_to_buffers(rows)
         self.log.info(
-            "Hour buffer sizes: %s",
-            ", ".join(
-                [f"{k:%Y-%m-%d %H}hr: {len(v)}" for k, v in self._hour_buffers.items()]
-            ),
+            "Hour buffer sizes: %s", self._buffer_print(self._hour_buffers)
         )
         self.log.info(
             "Hour seen key buffer sizes: %s",
-            ", ".join(
-                [f"{k:%Y-%m-%d %H}hr: {len(v)}" for k, v in self._hour_seen_keys.items()]
-            ),
+            self._buffer_print(self._hour_seen_keys),
         )
 
         # Store the buffer state to disk
@@ -163,9 +158,7 @@ class BaseRealtimePipeline(ABC):
 
         self._write_buffer()
 
-    def _decode_feed(
-        self, raw_bytes: bytes
-    ) -> gtfs_realtime_pb2.FeedMessage:
+    def _decode_feed(self, raw_bytes: bytes) -> gtfs_realtime_pb2.FeedMessage:
         """Decode raw GTFS-Realtime protobuf bytes into a FeedMessage."""
         feed = gtfs_realtime_pb2.FeedMessage()
         feed.ParseFromString(raw_bytes)
@@ -186,43 +179,6 @@ class BaseRealtimePipeline(ABC):
                 out.append(row)
         return out
 
-    def _add_to_buffers(self, rows: list[dict[str, Any]]) -> None:
-        """Add row data to buffer dict, using timestamp hour as key."""
-        added_rows = 0
-        for row in rows:
-            ts = row[self.columns.FEED_TIMESTAMP]
-            hour_key = ts.replace(minute=0, second=0, microsecond=0)
-
-            key = tuple(row[col] for col in self._dedupe_keys)
-
-            if key not in self._hour_seen_keys[hour_key]:
-                self._hour_seen_keys[hour_key].add(key)
-                self._hour_buffers[hour_key].append(row)
-                added_rows += 1
-        self.log.info("%d rows added to buffer(s)", added_rows)
-
-    def _write_buffer(self) -> None:
-        """Write partitions that are "safe" (hour fully passed + safe delay)"""
-        now: datetime = datetime.now(timezone.utc)
-        for hour_key in sorted(self._hour_buffers.keys()):
-            if now > hour_key + timedelta(hours=1) + self.safe_delay_mins:
-                # Final de-duplication of data. TODO: Should be able to remove
-                deduped_buffer = self._dedupe(
-                    self._hour_buffers[hour_key], self._dedupe_keys
-                )
-                self.log.info(
-                    "%d rows de-duplicated from hour buffer: %s",
-                    len(self._hour_buffers[hour_key]) - len(deduped_buffer),
-                    hour_key,
-                )
-
-                # Write data to partitioned parquet file
-                self._write_parquet(deduped_buffer)
-
-                # Clear written hour from buffer and seen keys
-                del self._hour_buffers[hour_key]
-                del self._hour_seen_keys[hour_key]
-
     def _write_parquet(self, rows: list[dict[str, Any]]) -> None:
         """Write a parquet file partitioned by hour and date."""
         table = pa.Table.from_pylist(rows, schema=self._schema)
@@ -234,6 +190,17 @@ class BaseRealtimePipeline(ABC):
             compression="zstd",
         )
         self.log.info("%d rows written to parquet partition", len(table))
+
+    def _verify_dedupe_keys(
+        self, dedupe_keys: list[str], columns: list[str]
+    ) -> None:
+        """Ensure all dedupe keys exist in schema."""
+        missing_keys: set[str] = set(dedupe_keys) - set(columns)
+        if missing_keys:
+            raise ValueError(
+                f"The following dedupe_key_columns are missing from schema: {missing_keys}"
+            )
+        self.log.info("Initialised")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Buffer checkpoint methods
@@ -269,16 +236,25 @@ class BaseRealtimePipeline(ABC):
 
         with open(self._hour_buffer_path, "rb") as f:
             hour_buffers = pickle.load(f)
-        self.log.info("Loaded hour buffers from checkpoint")
+        self.log.info(
+            "Loaded hour buffers from checkpoint: %s",
+            self._buffer_print(hour_buffers),
+        )
 
         # Load seen keys if available, otherwise rebuild from buffers
         if self._hour_seen_keys_path.exists():
             with open(self._hour_seen_keys_path, "rb") as f:
                 hour_seen_keys = pickle.load(f)
-            self.log.info("Loaded hour seen keys from checkpoint")
+            self.log.info(
+                "Loaded hour seen keys from checkpoint: %s",
+                self._buffer_print(hour_seen_keys),
+            )
         else:
             hour_seen_keys = self._rebuild_seen_keys(hour_buffers)
-            self.log.info("Rebuilt hour seen keys from hour buffers")
+            self.log.info(
+                "Rebuilt hour seen keys from hour buffers: %s",
+                self._buffer_print(hour_seen_keys),
+            )
 
         return hour_buffers, hour_seen_keys
 
@@ -293,6 +269,43 @@ class BaseRealtimePipeline(ABC):
                 seen_keys[hour].add(key)
         return seen_keys
 
+    def _add_to_buffers(self, rows: list[dict[str, Any]]) -> None:
+        """Add row data to buffer dict, using timestamp hour as key."""
+        added_rows = 0
+        for row in rows:
+            ts = row[self.table_schema.FEED_TIMESTAMP]
+            hour_key = ts.replace(minute=0, second=0, microsecond=0)
+
+            key = tuple(row[col] for col in self._dedupe_keys)
+
+            if key not in self._hour_seen_keys[hour_key]:
+                self._hour_seen_keys[hour_key].add(key)
+                self._hour_buffers[hour_key].append(row)
+                added_rows += 1
+        self.log.info("%d rows added to buffer(s)", added_rows)
+
+    def _write_buffer(self) -> None:
+        """Write partitions that are "safe" (hour fully passed + safe delay)"""
+        now: datetime = datetime.now(timezone.utc)
+        for hour_key in sorted(self._hour_buffers.keys()):
+            if now > hour_key + timedelta(hours=1) + self.safe_delay_mins:
+                # Final de-duplication of data. TODO: Should be able to remove
+                deduped_buffer = self._dedupe(
+                    self._hour_buffers[hour_key], self._dedupe_keys
+                )
+                self.log.info(
+                    "%d rows de-duplicated from hour buffer: %s",
+                    len(self._hour_buffers[hour_key]) - len(deduped_buffer),
+                    hour_key,
+                )
+
+                # Write data to partitioned parquet file
+                self._write_parquet(deduped_buffer)
+
+                # Clear written hour from buffer and seen keys
+                del self._hour_buffers[hour_key]
+                del self._hour_seen_keys[hour_key]
+
     def _save_buffer_checkpoint(self) -> None:
         """Persist buffer state to pickle checkpoint files."""
         self._checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -305,13 +318,8 @@ class BaseRealtimePipeline(ABC):
 
         self.log.debug("Buffer checkpoint saved")
 
-    def _verify_dedupe_keys(
-        self, dedupe_keys: list[str], columns: list[str]
-    ) -> None:
-        """Ensure all dedupe keys exist in schema."""
-        missing_keys: set[str] = set(dedupe_keys) - set(columns)
-        if missing_keys:
-            raise ValueError(
-                f"The following dedupe_key_columns are missing from schema: {missing_keys}"
-            )
-        self.log.info("Initialised")
+    def _buffer_print(self, buffer) -> str:
+        """The length of each hour in the buffer"""
+        return ", ".join(
+            [f"{k:%Y-%m-%d %H}hr: {len(v)}" for k, v in buffer.items()]
+        )
