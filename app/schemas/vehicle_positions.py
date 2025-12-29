@@ -4,10 +4,10 @@ import json
 
 import pyarrow as pa
 
-from app.schemas.base import BaseColumns
+from app.schemas.base import BaseTableSchema
 
 
-class VehiclePositionColumns(BaseColumns):
+class VehiclePositionSchema(BaseTableSchema):
     """Column definitions and schema for vehicle positions table."""
 
     POLL_TIME = "poll_time"
@@ -43,7 +43,7 @@ class VehiclePositionColumns(BaseColumns):
         return [cls.FEED_DATE, cls.FEED_HOUR, cls.ROUTE_ID]
 
     @classmethod
-    def schema(cls) -> pa.Schema:
+    def pa_schema(cls) -> pa.Schema:
         """Return the PyArrow schema for vehicle positions."""
         partition_cols_json = json.dumps(cls.partition_cols()).encode("utf-8")
         return pa.schema(

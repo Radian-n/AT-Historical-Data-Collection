@@ -22,7 +22,7 @@ from app.config import (
     POLL_INTERVAL_SECONDS,
     SAFE_DELAY_MINS,
 )
-from app.schemas.base import BaseColumns
+from app.schemas.base import BaseTableSchema
 from app.utils import derive_feed_partitions
 
 
@@ -41,7 +41,8 @@ class BaseRealtimePipeline(ABC):
     Subclasses must define:
         - url: str - HTTP endpoint
         - table_name: str - Name for output directory and checkpoint files
-        - columns: type[BaseColumns] - Column enum with schema(), dedupe_keys(), partition_cols()
+        - table_schema: type[BaseTableSchema] - Schema with pa_schema(),
+          dedupe_keys(), partition_cols()
         - normalise(feed, poll_time) -> list[dict]
 
     Subclasses may override:
@@ -55,7 +56,7 @@ class BaseRealtimePipeline(ABC):
     # ──────────────────────────────────────────────────────────────────────────
     url: str
     table_name: str
-    columns: type[BaseColumns]
+    table_schema: type[BaseTableSchema]
 
     # ──────────────────────────────────────────────────────────────────────────
     # Subclass may override these
@@ -67,10 +68,10 @@ class BaseRealtimePipeline(ABC):
     def __init__(self) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
 
-        # Derived from columns enum
-        self._schema: pa.Schema = self.columns.schema()
-        self._partition_cols: list[str] = self.columns.partition_cols()
-        self._dedupe_keys: list[str] = self.columns.dedupe_keys()
+        # Derived from table schema
+        self._schema: pa.Schema = self.table_schema.pa_schema()
+        self._partition_cols: list[str] = self.table_schema.partition_cols()
+        self._dedupe_keys: list[str] = self.table_schema.dedupe_keys()
         self._verify_dedupe_keys(self._dedupe_keys, self._schema.names)
 
         # Runtime state
@@ -225,7 +226,7 @@ class BaseRealtimePipeline(ABC):
     def _write_parquet(self, rows: list[dict[str, Any]]) -> None:
         """Write a parquet file partitioned by hour and date."""
         table = pa.Table.from_pylist(rows, schema=self._schema)
-        table = derive_feed_partitions(table, self.columns.FEED_TIMESTAMP)
+        table = derive_feed_partitions(table, self.table_schema.FEED_TIMESTAMP)
         pq.write_to_dataset(
             table,
             root_path=DATA_ROOT / self.table_name,

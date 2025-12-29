@@ -6,7 +6,7 @@ from typing import Any
 from google.transit import gtfs_realtime_pb2
 
 from app.pipelines.base import BaseRealtimePipeline
-from app.schemas.vehicle_positions import VehiclePositionColumns
+from app.schemas.vehicle_positions import VehiclePositionSchema
 
 
 class VehiclePositionsPipeline(BaseRealtimePipeline):
@@ -18,7 +18,7 @@ class VehiclePositionsPipeline(BaseRealtimePipeline):
 
     url = "https://api.at.govt.nz/realtime/legacy/vehiclelocations"
     table_name = "vehicle_positions"
-    columns = VehiclePositionColumns
+    table_schema = VehiclePositionSchema
 
     def normalise(
         self, feed: gtfs_realtime_pb2.FeedMessage, poll_time: datetime
@@ -38,33 +38,33 @@ class VehiclePositionsPipeline(BaseRealtimePipeline):
             v = entity.vehicle
             row = {
                 # Timestamps
-                VehiclePositionColumns.POLL_TIME: poll_time,
-                VehiclePositionColumns.FEED_TIMESTAMP: datetime.fromtimestamp(
+                VehiclePositionSchema.POLL_TIME: poll_time,
+                VehiclePositionSchema.FEED_TIMESTAMP: datetime.fromtimestamp(
                     v.timestamp, tz=timezone.utc
                 ),
                 # Vehicle details
-                VehiclePositionColumns.VEHICLE_ID: v.vehicle.id or None,
-                VehiclePositionColumns.LABEL: v.vehicle.label or None,
-                VehiclePositionColumns.LICENSE_PLATE: (
+                VehiclePositionSchema.VEHICLE_ID: v.vehicle.id or None,
+                VehiclePositionSchema.LABEL: v.vehicle.label or None,
+                VehiclePositionSchema.LICENSE_PLATE: (
                     v.vehicle.license_plate or None
                 ),
                 # Trip/route info
-                VehiclePositionColumns.TRIP_ID: v.trip.trip_id or None,
-                VehiclePositionColumns.ROUTE_ID: v.trip.route_id or None,
-                VehiclePositionColumns.DIRECTION_ID: v.trip.direction_id,
-                VehiclePositionColumns.SCHEDULE_RELATIONSHIP: (
+                VehiclePositionSchema.TRIP_ID: v.trip.trip_id or None,
+                VehiclePositionSchema.ROUTE_ID: v.trip.route_id or None,
+                VehiclePositionSchema.DIRECTION_ID: v.trip.direction_id,
+                VehiclePositionSchema.SCHEDULE_RELATIONSHIP: (
                     v.trip.schedule_relationship
                 ),
-                VehiclePositionColumns.START_DATE: v.trip.start_date or None,
-                VehiclePositionColumns.START_TIME: v.trip.start_time or None,
+                VehiclePositionSchema.START_DATE: v.trip.start_date or None,
+                VehiclePositionSchema.START_TIME: v.trip.start_time or None,
                 # Position data
-                VehiclePositionColumns.LATITUDE: v.position.latitude,
-                VehiclePositionColumns.LONGITUDE: v.position.longitude,
-                VehiclePositionColumns.BEARING: v.position.bearing,
-                VehiclePositionColumns.SPEED: v.position.speed,
-                VehiclePositionColumns.ODOMETER: v.position.odometer,
-                VehiclePositionColumns.OCCUPANCY_STATUS: v.occupancy_status,
-                VehiclePositionColumns.ENTITY_IS_DELETED: entity.is_deleted,
+                VehiclePositionSchema.LATITUDE: v.position.latitude,
+                VehiclePositionSchema.LONGITUDE: v.position.longitude,
+                VehiclePositionSchema.BEARING: v.position.bearing,
+                VehiclePositionSchema.SPEED: v.position.speed,
+                VehiclePositionSchema.ODOMETER: v.position.odometer,
+                VehiclePositionSchema.OCCUPANCY_STATUS: v.occupancy_status,
+                VehiclePositionSchema.ENTITY_IS_DELETED: entity.is_deleted,
             }
             rows.append(row)
 

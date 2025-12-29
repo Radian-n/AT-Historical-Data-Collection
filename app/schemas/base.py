@@ -5,11 +5,11 @@ from enum import StrEnum
 import pyarrow as pa
 
 
-class BaseColumns(StrEnum):
+class BaseTableSchema(StrEnum):
     """Base class for column enums defining table schemas.
 
     Subclasses must define column names as class attributes and implement
-    the abstract class methods: dedupe_keys(), partition_cols(), schema().
+    the abstract class methods: dedupe_keys(), partition_cols(), pa_schema().
     """
 
     @classmethod
@@ -32,8 +32,8 @@ class BaseColumns(StrEnum):
         )
 
     @classmethod
-    def schema(cls) -> pa.Schema:
+    def pa_schema(cls) -> pa.Schema:
         """Return the PyArrow schema for the table."""
         raise NotImplementedError(
-            f"{cls.__name__} must define schema() method"
+            f"{cls.__name__} must define pa_schema() method"
         )
