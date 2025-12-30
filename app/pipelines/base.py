@@ -3,7 +3,6 @@
 import hashlib
 import logging
 import pickle
-import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -18,7 +17,6 @@ from app.config import (
     AT_API_HEADERS,
     BUFFER_CHECKPOINT_ROOT,
     DATA_ROOT,
-    POLL_INTERVAL_SECONDS,
     SAFE_DELAY_MINS,
 )
 from app.schemas.base import BaseTableSchema
@@ -31,13 +29,15 @@ class RealtimePipeline:
     GTFS-Realtime data. Configuration is provided via constructor
     arguments and the table_schema handles entity-specific logic.
 
+    Designed to be called by an external scheduler (e.g., APScheduler).
+    Call run_once() to execute a single fetch-parse-buffer-write cycle.
+
     Args:
         url: HTTP endpoint for the GTFS-Realtime feed.
         table_name: Name for output directory and checkpoint files.
         table_schema: Schema class defining structure, parsing, and
             partitioning for the entity type.
         headers: HTTP headers for requests (default: AT API headers).
-        poll_interval: Seconds between polls (default: from config).
         safe_delay_mins: Wait after hour ends before writing
             (default: 16 mins).
     """
@@ -48,14 +48,12 @@ class RealtimePipeline:
         table_name: str,
         table_schema: type[BaseTableSchema],
         headers: dict | None = AT_API_HEADERS,
-        poll_interval: float = POLL_INTERVAL_SECONDS,
         safe_delay_mins: timedelta = timedelta(minutes=SAFE_DELAY_MINS),
     ) -> None:
         self.url = url
         self.table_name = table_name
         self.table_schema = table_schema
         self.headers = headers
-        self.poll_interval = poll_interval
         self.safe_delay_mins = safe_delay_mins
 
         self.log = logging.getLogger(f"{self.__class__.__name__}[{table_name}]")
@@ -79,22 +77,11 @@ class RealtimePipeline:
     # Pipeline execution
     # ──────────────────────────────────────────────────────────────────────────
 
-    def run_forever(self) -> None:
-        """Run the pipeline indefinitely."""
-        while True:
-            try:
-                self._run_once()
-                self.log.info(
-                    "Pipeline run successful. Waiting %ds...",
-                    self.poll_interval,
-                )
-            except Exception:
-                # Handle any exceptions without stopping the loop
-                self.log.exception("Unexpected error")
-            time.sleep(self.poll_interval)
+    def run_once(self) -> None:
+        """Execute a single fetch-parse-buffer-write cycle.
 
-    def _run_once(self) -> None:
-        """Run a single fetch, normalise, buffer write sequence."""
+        Designed to be called by an external scheduler.
+        """
         poll_time = datetime.now(timezone.utc)
 
         try:
