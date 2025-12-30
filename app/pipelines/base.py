@@ -156,7 +156,7 @@ class BaseRealtimePipeline(ABC):
         # Store the buffer state to disk
         self._save_buffer_checkpoint()
 
-        self._write_buffer()
+        self._flush_ready_hours()
 
     def _decode_feed(self, raw_bytes: bytes) -> gtfs_realtime_pb2.FeedMessage:
         """Decode raw GTFS-Realtime protobuf bytes into a FeedMessage."""
@@ -203,7 +203,7 @@ class BaseRealtimePipeline(ABC):
         self.log.info("Initialised")
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Buffer checkpoint methods
+    # Buffer methods
     # ──────────────────────────────────────────────────────────────────────────
 
     def _init_buffers(
@@ -284,27 +284,43 @@ class BaseRealtimePipeline(ABC):
                 added_rows += 1
         self.log.info("%d rows added to buffer(s)", added_rows)
 
-    def _write_buffer(self) -> None:
-        """Write partitions that are "safe" (hour fully passed + safe delay)"""
-        now: datetime = datetime.now(timezone.utc)
-        for hour_key in sorted(self._hour_buffers.keys()):
-            if now > hour_key + timedelta(hours=1) + self.safe_delay_mins:
-                # Final de-duplication of data. TODO: Should be able to remove
-                deduped_buffer = self._dedupe(
-                    self._hour_buffers[hour_key], self._dedupe_keys
-                )
-                self.log.info(
-                    "%d rows de-duplicated from hour buffer: %s",
-                    len(self._hour_buffers[hour_key]) - len(deduped_buffer),
-                    hour_key,
-                )
+    def _flush_ready_hours(self) -> None:
+        """Flush hour partitions that are past the safe delay."""
+        for hour_key in self._get_ready_hours():
+            self._flush_hour(hour_key)
 
-                # Write data to partitioned parquet file
-                self._write_parquet(deduped_buffer)
+    def _get_ready_hours(self) -> list[datetime]:
+        """Return hour keys that are safe to write.
 
-                # Clear written hour from buffer and seen keys
-                del self._hour_buffers[hour_key]
-                del self._hour_seen_keys[hour_key]
+        An hour is ready when the current time is past the hour's end
+        plus the safe delay margin.
+        """
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(hours=1) - self.safe_delay_mins
+        return [
+            hour_key
+            for hour_key in sorted(self._hour_buffers.keys())
+            if hour_key < cutoff
+        ]
+
+    def _flush_hour(self, hour_key: datetime) -> None:
+        """Dedupe, write to parquet, and clear buffer for one hour."""
+        # Final de-duplication of data. TODO: Should be able to remove
+        deduped_buffer = self._dedupe(
+            self._hour_buffers[hour_key], self._dedupe_keys
+        )
+        self.log.info(
+            "%d rows de-duplicated from hour buffer: %s",
+            len(self._hour_buffers[hour_key]) - len(deduped_buffer),
+            hour_key,
+        )
+
+        # Write data to partitioned parquet file
+        self._write_parquet(deduped_buffer)
+
+        # Clear written hour from buffer and seen keys
+        del self._hour_buffers[hour_key]
+        del self._hour_seen_keys[hour_key]
 
     def _save_buffer_checkpoint(self) -> None:
         """Persist buffer state to pickle checkpoint files."""
