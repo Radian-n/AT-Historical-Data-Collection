@@ -8,6 +8,7 @@ Collects real-time GTFS data from the Auckland Transport API and stores it as pa
 - Deduplicates records within each collection window
 - Writes hourly partitioned Parquet files
 - Checkpoints buffer state for crash recovery
+- Uses APScheduler for job scheduling
 
 ## Requirements
 
@@ -48,7 +49,7 @@ Optional settings:
 uv run python main.py
 ```
 
-The application runs continuously, polling the API and writing hourly Parquet files to `data/`.
+The application runs continuously, polling the API on a schedule and writing hourly Parquet files to `data/`.
 
 ## Output Structure
 
@@ -67,15 +68,30 @@ data/
 app/
 ├── config.py           # Configuration and environment variables
 ├── logging_config.py   # Logging setup
-├── pipelines/          # Data collection pipelines
-│   ├── base.py         # Abstract base pipeline
-│   └── vehicle_positions.py
-├── schemas/            # PyArrow schemas and column definitions
-│   ├── base.py
-│   └── vehicle_positions.py
-└── utils.py            # Utility functions
+├── pipeline.py         # RealtimePipeline class
+└── entities/           # Entity definitions
+    ├── base.py         # BaseEntity abstract class
+    └── vehicle_positions.py  # VehiclePositionEntity
 main.py                 # Entry point
 ```
+
+### Architecture
+
+**Entities** define the complete specification for a GTFS data type:
+- Feed URL and table name
+- Column definitions
+- Protobuf parsing logic (`normalise`)
+- Derived columns (`add_derived_columns`)
+- Partitioning and deduplication keys
+- PyArrow schema
+
+**RealtimePipeline** is a generic, reusable pipeline that:
+- Fetches data from the entity's URL
+- Parses using the entity's `normalise` method
+- Buffers and deduplicates data
+- Writes partitioned Parquet files
+
+To add a new entity type (e.g., trip updates), create a new entity class and add it to the scheduler in `main.py`.
 
 ## License
 

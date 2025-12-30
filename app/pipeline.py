@@ -19,24 +19,22 @@ from app.config import (
     DATA_ROOT,
     SAFE_DELAY_MINS,
 )
-from app.schemas.base import BaseTableSchema
+from app.entities.base import BaseEntity
 
 
 class RealtimePipeline:
     """GTFS-Realtime ingestion pipeline.
 
     A reusable pipeline that fetches, parses, buffers, and writes
-    GTFS-Realtime data. Configuration is provided via constructor
-    arguments and the table_schema handles entity-specific logic.
+    GTFS-Realtime data. The entity class defines all entity-specific
+    configuration and logic.
 
     Designed to be called by an external scheduler (e.g., APScheduler).
     Call run_once() to execute a single fetch-parse-buffer-write cycle.
 
     Args:
-        url: HTTP endpoint for the GTFS-Realtime feed.
-        table_name: Name for output directory and checkpoint files.
-        table_schema: Schema class defining structure, parsing, and
-            partitioning for the entity type.
+        entity: Entity class defining URL, table name, structure,
+            parsing, and partitioning.
         headers: HTTP headers for requests (default: AT API headers).
         safe_delay_mins: Wait after hour ends before writing
             (default: 16 mins).
@@ -44,29 +42,27 @@ class RealtimePipeline:
 
     def __init__(
         self,
-        url: str,
-        table_name: str,
-        table_schema: type[BaseTableSchema],
+        entity: type[BaseEntity],
         headers: dict | None = AT_API_HEADERS,
         safe_delay_mins: timedelta = timedelta(minutes=SAFE_DELAY_MINS),
     ) -> None:
-        self.url = url
-        self.table_name = table_name
-        self.table_schema = table_schema
+        self.entity = entity
         self.headers = headers
         self.safe_delay_mins = safe_delay_mins
 
-        self.log = logging.getLogger(f"{self.__class__.__name__}[{table_name}]")
+        self.log = logging.getLogger(
+            f"{self.__class__.__name__}[{entity.TABLE_NAME}]"
+        )
 
-        # Derived from table schema
-        self._schema: pa.Schema = self.table_schema.pa_schema()
-        self._partition_cols: list[str] = self.table_schema.partition_cols()
-        self._dedupe_keys: list[str] = self.table_schema.dedupe_keys()
+        # Derived from entity
+        self._schema: pa.Schema = self.entity.pa_schema()
+        self._partition_cols: list[str] = self.entity.partition_cols()
+        self._dedupe_keys: list[str] = self.entity.dedupe_keys()
         self._verify_dedupe_keys(self._dedupe_keys, self._schema.names)
 
         # Runtime state
         self._last_md5: str | None = None
-        self._checkpoint_dir = BUFFER_CHECKPOINT_ROOT / self.table_name
+        self._checkpoint_dir = BUFFER_CHECKPOINT_ROOT / self.entity.TABLE_NAME
         self._hour_buffer_path = self._checkpoint_dir / "hour_buffers.pickle"
         self._hour_seen_keys_path = (
             self._checkpoint_dir / "hour_seen_keys.pickle"
@@ -85,7 +81,7 @@ class RealtimePipeline:
         poll_time = datetime.now(timezone.utc)
 
         try:
-            resp = requests.get(url=self.url, headers=self.headers)
+            resp = requests.get(url=self.entity.URL, headers=self.headers)
             resp.raise_for_status()
         except requests.RequestException:
             self.log.exception("HTTP fetch failed")
@@ -110,7 +106,7 @@ class RealtimePipeline:
             return
 
         try:
-            rows = self.table_schema.normalise(feed, poll_time)
+            rows = self.entity.normalise(feed, poll_time)
             self.log.info("%d rows normalised", len(rows))
         except Exception:
             self.log.exception("Unexpected error in normalise")
@@ -211,7 +207,7 @@ class RealtimePipeline:
         """Add row data to buffer dict, using timestamp hour as key."""
         added_rows = 0
         for row in rows:
-            ts = row[self.table_schema.FEED_TIMESTAMP]
+            ts = row[self.entity.FEED_TIMESTAMP]
             hour_key = ts.replace(minute=0, second=0, microsecond=0)
 
             key = tuple(row[col] for col in self._dedupe_keys)
@@ -285,10 +281,10 @@ class RealtimePipeline:
     def _write_parquet(self, rows: list[dict[str, Any]]) -> None:
         """Write a parquet file partitioned by hour and date."""
         table = pa.Table.from_pylist(rows, schema=self._schema)
-        table = self.table_schema.add_derived_columns(table)
+        table = self.entity.add_derived_columns(table)
         pq.write_to_dataset(
             table,
-            root_path=DATA_ROOT / self.table_name,
+            root_path=DATA_ROOT / self.entity.TABLE_NAME,
             partition_cols=self._partition_cols,
             compression="zstd",
         )

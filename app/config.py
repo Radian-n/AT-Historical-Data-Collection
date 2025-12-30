@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # How long to wait before hitting the API again
-POLL_INTERVAL_SECONDS: Final[float] = float(
-    os.getenv("POLL_INTERVAL_SECONDS", "30.0")
+POLL_INTERVAL_SECONDS: Final[float] = int(
+    os.getenv("POLL_INTERVAL_SECONDS", "30")
 )
 
 # How many minutes to wait after the end of the hour before writing data.

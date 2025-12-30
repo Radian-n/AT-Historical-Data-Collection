@@ -1,4 +1,4 @@
-"""Base schema class for GTFS data tables."""
+"""Base entity class for GTFS data tables."""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -8,10 +8,11 @@ import pyarrow as pa
 from google.transit import gtfs_realtime_pb2
 
 
-class BaseTableSchema(ABC):
-    """Base class for GTFS entity schemas.
+class BaseEntity(ABC):
+    """Base class for GTFS entity definitions.
 
     Subclasses define the complete specification for a GTFS entity:
+    - URL and table name for the feed
     - Column name constants as UPPER_CASE class attributes
     - How to parse protobuf feed data (normalise)
     - How to derive computed columns (add_derived_columns)
@@ -19,6 +20,8 @@ class BaseTableSchema(ABC):
     - Partitioning and deduplication configuration
 
     Required class attributes:
+        URL: str - HTTP endpoint for the GTFS-Realtime feed
+        TABLE_NAME: str - name for output directory and checkpoint files
         FEED_TIMESTAMP: str - column name containing the feed timestamp
 
     Required methods:
@@ -31,6 +34,8 @@ class BaseTableSchema(ABC):
         - add_derived_columns(table) -> pa.Table
     """
 
+    URL: str
+    TABLE_NAME: str
     FEED_TIMESTAMP: str
 
     @classmethod

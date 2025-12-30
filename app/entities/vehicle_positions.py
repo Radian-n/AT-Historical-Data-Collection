@@ -1,4 +1,4 @@
-"""Schema definition for vehicle positions data."""
+"""Entity definition for vehicle positions data."""
 
 import json
 from datetime import datetime, timezone
@@ -8,11 +8,14 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from google.transit import gtfs_realtime_pb2
 
-from app.schemas.base import BaseTableSchema
+from app.entities.base import BaseEntity
 
 
-class VehiclePositionSchema(BaseTableSchema):
-    """Schema and parsing logic for vehicle positions entity."""
+class VehiclePositionEntity(BaseEntity):
+    """Complete entity definition for vehicle positions."""
+
+    URL = "https://api.at.govt.nz/realtime/legacy/vehiclelocations"
+    TABLE_NAME = "vehicle_positions"
 
     # Timestamps
     POLL_TIME = "poll_time"
