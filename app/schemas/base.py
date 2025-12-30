@@ -1,39 +1,71 @@
 """Base schema class for GTFS data tables."""
 
-from enum import StrEnum
+from abc import ABC, abstractmethod
+from datetime import datetime
+from typing import Any
 
 import pyarrow as pa
+from google.transit import gtfs_realtime_pb2
 
 
-class BaseTableSchema(StrEnum):
-    """Base class for column enums defining table schemas.
+class BaseTableSchema(ABC):
+    """Base class for GTFS entity schemas.
 
-    Subclasses must define column names as class attributes and implement
-    the abstract class methods: dedupe_keys(), partition_cols(), pa_schema().
+    Subclasses define the complete specification for a GTFS entity:
+    - Column name constants as UPPER_CASE class attributes
+    - How to parse protobuf feed data (normalise)
+    - How to derive computed columns (add_derived_columns)
+    - PyArrow schema for storage (pa_schema)
+    - Partitioning and deduplication configuration
+
+    Required class attributes:
+        FEED_TIMESTAMP: str - column name containing the feed timestamp
+
+    Required methods:
+        - normalise(feed, poll_time) -> list[dict]
+        - dedupe_keys() -> list[str]
+        - partition_cols() -> list[str]
+        - pa_schema() -> pa.Schema
+
+    Optional overrides:
+        - add_derived_columns(table) -> pa.Table
     """
 
-    @classmethod
-    def names(cls) -> list[str]:
-        """Return ordered list of column names."""
-        return [c.value for c in cls]
+    FEED_TIMESTAMP: str
 
     @classmethod
+    @abstractmethod
+    def normalise(
+        cls,
+        feed: gtfs_realtime_pb2.FeedMessage,
+        poll_time: datetime,
+    ) -> list[dict[str, Any]]:
+        """Parse protobuf feed into normalised row dictionaries."""
+        raise NotImplementedError
+
+    @classmethod
+    @abstractmethod
     def dedupe_keys(cls) -> list[str]:
-        """Return the columns used as keys to de-duplicate data."""
-        raise NotImplementedError(
-            f"{cls.__name__} must define dedupe_keys() method"
-        )
+        """Return columns used as keys to deduplicate data."""
+        raise NotImplementedError
 
     @classmethod
+    @abstractmethod
     def partition_cols(cls) -> list[str]:
-        """Return the columns used to partition parquet data writes."""
-        raise NotImplementedError(
-            f"{cls.__name__} must define partition_cols() method"
-        )
+        """Return columns used to partition parquet files."""
+        raise NotImplementedError
 
     @classmethod
+    @abstractmethod
     def pa_schema(cls) -> pa.Schema:
         """Return the PyArrow schema for the table."""
-        raise NotImplementedError(
-            f"{cls.__name__} must define pa_schema() method"
-        )
+        raise NotImplementedError
+
+    @classmethod
+    def add_derived_columns(cls, table: pa.Table) -> pa.Table:
+        """Add any derived columns needed before partitioning.
+
+        Override if your schema has columns computed from existing data
+        (e.g., extracting date/hour from a timestamp).
+        """
+        return table

@@ -1,10 +1,9 @@
-"""Base pipeline class for GTFS-Realtime data ingestion."""
+"""Pipeline class for GTFS-Realtime data ingestion."""
 
 import hashlib
 import logging
 import pickle
 import time
-from abc import ABC, abstractmethod
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -23,50 +22,43 @@ from app.config import (
     SAFE_DELAY_MINS,
 )
 from app.schemas.base import BaseTableSchema
-from app.utils import derive_feed_partitions
 
 
-class BaseRealtimePipeline(ABC):
-    """
-    Base class for GTFS-Realtime ingestion pipelines.
+class RealtimePipeline:
+    """GTFS-Realtime ingestion pipeline.
 
-    Responsibilities:
-        - Poll HTTP endpoint for protobuf feed
-        - Skip identical payloads using MD5
-        - Normalise feed into dictionaries (subclass-defined)
-        - Every poll, add non-duplicate data to buffer
-        - Write-ahead log (WAL) durability
-        - Hourly partitioned Parquet writes
+    A reusable pipeline that fetches, parses, buffers, and writes
+    GTFS-Realtime data. Configuration is provided via constructor
+    arguments and the table_schema handles entity-specific logic.
 
-    Subclasses must define:
-        - url: str - HTTP endpoint
-        - table_name: str - Name for output directory and checkpoint files
-        - table_schema: type[BaseTableSchema] - Schema with pa_schema(),
-          dedupe_keys(), partition_cols()
-        - normalise(feed, poll_time) -> list[dict]
-
-    Subclasses may override:
-        - headers: dict | None - HTTP headers (default: AT_API_HEADERS)
-        - poll_interval: float - Seconds between polls (default: POLL_INTERVAL_SECONDS)
-        - safe_delay_mins: timedelta - Wait after hour ends before writing (default: 16 mins)
+    Args:
+        url: HTTP endpoint for the GTFS-Realtime feed.
+        table_name: Name for output directory and checkpoint files.
+        table_schema: Schema class defining structure, parsing, and
+            partitioning for the entity type.
+        headers: HTTP headers for requests (default: AT API headers).
+        poll_interval: Seconds between polls (default: from config).
+        safe_delay_mins: Wait after hour ends before writing
+            (default: 16 mins).
     """
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # Subclass must define these
-    # ──────────────────────────────────────────────────────────────────────────
-    url: str
-    table_name: str
-    table_schema: type[BaseTableSchema]
+    def __init__(
+        self,
+        url: str,
+        table_name: str,
+        table_schema: type[BaseTableSchema],
+        headers: dict | None = AT_API_HEADERS,
+        poll_interval: float = POLL_INTERVAL_SECONDS,
+        safe_delay_mins: timedelta = timedelta(minutes=SAFE_DELAY_MINS),
+    ) -> None:
+        self.url = url
+        self.table_name = table_name
+        self.table_schema = table_schema
+        self.headers = headers
+        self.poll_interval = poll_interval
+        self.safe_delay_mins = safe_delay_mins
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # Subclass may override these
-    # ──────────────────────────────────────────────────────────────────────────
-    headers: dict | None = AT_API_HEADERS
-    poll_interval: float = POLL_INTERVAL_SECONDS
-    safe_delay_mins: timedelta = timedelta(minutes=SAFE_DELAY_MINS)
-
-    def __init__(self) -> None:
-        self.log = logging.getLogger(self.__class__.__name__)
+        self.log = logging.getLogger(f"{self.__class__.__name__}[{table_name}]")
 
         # Derived from table schema
         self._schema: pa.Schema = self.table_schema.pa_schema()
@@ -82,21 +74,6 @@ class BaseRealtimePipeline(ABC):
             self._checkpoint_dir / "hour_seen_keys.pickle"
         )
         self._hour_buffers, self._hour_seen_keys = self._init_buffers()
-
-    # ──────────────────────────────────────────────────────────────────────────
-    # Subclass interface
-    # ──────────────────────────────────────────────────────────────────────────
-
-    @abstractmethod
-    def normalise(
-        self, feed: gtfs_realtime_pb2.FeedMessage, poll_time: datetime
-    ) -> list[dict[str, Any]]:
-        """Convert decoded feed entities into normalised row dictionaries.
-
-        Method must also convert any timestamp columns required in further
-        processing steps into the correct datetime format (UTC).
-        """
-        raise NotImplementedError
 
     # ──────────────────────────────────────────────────────────────────────────
     # Pipeline execution
@@ -146,10 +123,10 @@ class BaseRealtimePipeline(ABC):
             return
 
         try:
-            rows = self.normalise(feed, poll_time)
+            rows = self.table_schema.normalise(feed, poll_time)
             self.log.info("%d rows normalised", len(rows))
         except Exception:
-            self.log.exception("Unexpected error in self.normalise")
+            self.log.exception("Unexpected error in normalise")
             return
 
         self._add_to_buffers(rows)
@@ -201,8 +178,8 @@ class BaseRealtimePipeline(ABC):
         """Load buffer state from pickle checkpoint files.
 
         Returns:
-            Tuple of (hour_buffers, hour_seen_keys). If no checkpoint exists,
-            returns (None, empty defaultdict).
+            Tuple of (hour_buffers, hour_seen_keys). If no checkpoint
+            exists, returns (None, empty defaultdict).
         """
         if not self._hour_buffer_path.exists():
             self.log.info("No buffer checkpoint found, starting fresh")
@@ -321,7 +298,7 @@ class BaseRealtimePipeline(ABC):
     def _write_parquet(self, rows: list[dict[str, Any]]) -> None:
         """Write a parquet file partitioned by hour and date."""
         table = pa.Table.from_pylist(rows, schema=self._schema)
-        table = derive_feed_partitions(table, self.table_schema.FEED_TIMESTAMP)
+        table = self.table_schema.add_derived_columns(table)
         pq.write_to_dataset(
             table,
             root_path=DATA_ROOT / self.table_name,
