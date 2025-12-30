@@ -83,6 +83,10 @@ class BaseRealtimePipeline(ABC):
         )
         self._hour_buffers, self._hour_seen_keys = self._init_buffers()
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # Subclass interface
+    # ──────────────────────────────────────────────────────────────────────────
+
     @abstractmethod
     def normalise(
         self, feed: gtfs_realtime_pb2.FeedMessage, poll_time: datetime
@@ -93,6 +97,10 @@ class BaseRealtimePipeline(ABC):
         processing steps into the correct datetime format (UTC).
         """
         raise NotImplementedError
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Pipeline execution
+    # ──────────────────────────────────────────────────────────────────────────
 
     def run_forever(self) -> None:
         """Run the pipeline indefinitely."""
@@ -158,49 +166,15 @@ class BaseRealtimePipeline(ABC):
 
         self._flush_ready_hours()
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # Feed processing
+    # ──────────────────────────────────────────────────────────────────────────
+
     def _decode_feed(self, raw_bytes: bytes) -> gtfs_realtime_pb2.FeedMessage:
         """Decode raw GTFS-Realtime protobuf bytes into a FeedMessage."""
         feed = gtfs_realtime_pb2.FeedMessage()
         feed.ParseFromString(raw_bytes)
         return feed
-
-    def _dedupe(
-        self, rows: list[dict[str, Any]], key_names: list[str]
-    ) -> list[dict[str, Any]]:
-        """Deduplicate rows in a list based on key_names."""
-        seen = set()
-        out = []
-        for row in rows:
-            key = tuple(row.get(col) for col in key_names)
-            if None in key:
-                raise RuntimeError("`key` includes a None value.")
-            if key not in seen:
-                seen.add(key)
-                out.append(row)
-        return out
-
-    def _write_parquet(self, rows: list[dict[str, Any]]) -> None:
-        """Write a parquet file partitioned by hour and date."""
-        table = pa.Table.from_pylist(rows, schema=self._schema)
-        table = derive_feed_partitions(table, self.table_schema.FEED_TIMESTAMP)
-        pq.write_to_dataset(
-            table,
-            root_path=DATA_ROOT / self.table_name,
-            partition_cols=self._partition_cols,
-            compression="zstd",
-        )
-        self.log.info("%d rows written to parquet partition", len(table))
-
-    def _verify_dedupe_keys(
-        self, dedupe_keys: list[str], columns: list[str]
-    ) -> None:
-        """Ensure all dedupe keys exist in schema."""
-        missing_keys: set[str] = set(dedupe_keys) - set(columns)
-        if missing_keys:
-            raise ValueError(
-                f"The following dedupe_key_columns are missing from schema: {missing_keys}"
-            )
-        self.log.info("Initialised")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Buffer methods
@@ -339,3 +313,50 @@ class BaseRealtimePipeline(ABC):
         return ", ".join(
             [f"{k:%Y-%m-%d %H}hr: {len(v)}" for k, v in buffer.items()]
         )
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Parquet output
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _write_parquet(self, rows: list[dict[str, Any]]) -> None:
+        """Write a parquet file partitioned by hour and date."""
+        table = pa.Table.from_pylist(rows, schema=self._schema)
+        table = derive_feed_partitions(table, self.table_schema.FEED_TIMESTAMP)
+        pq.write_to_dataset(
+            table,
+            root_path=DATA_ROOT / self.table_name,
+            partition_cols=self._partition_cols,
+            compression="zstd",
+        )
+        self.log.info("%d rows written to parquet partition", len(table))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Utilities
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _dedupe(
+        self, rows: list[dict[str, Any]], key_names: list[str]
+    ) -> list[dict[str, Any]]:
+        """Deduplicate rows in a list based on key_names."""
+        seen = set()
+        out = []
+        for row in rows:
+            key = tuple(row.get(col) for col in key_names)
+            if None in key:
+                raise RuntimeError("`key` includes a None value.")
+            if key not in seen:
+                seen.add(key)
+                out.append(row)
+        return out
+
+    def _verify_dedupe_keys(
+        self, dedupe_keys: list[str], columns: list[str]
+    ) -> None:
+        """Ensure all dedupe keys exist in schema."""
+        missing_keys: set[str] = set(dedupe_keys) - set(columns)
+        if missing_keys:
+            raise ValueError(
+                f"The following dedupe_key_columns are missing "
+                f"from schema: {missing_keys}"
+            )
+        self.log.info("Initialised")
