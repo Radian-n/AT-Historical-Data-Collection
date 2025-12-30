@@ -40,8 +40,16 @@ Optional settings:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `POLL_INTERVAL_SECONDS` | `30.0` | Seconds between API requests |
-| `SAFE_DELAY_MINS` | `16.0` | Minutes to wait after hour ends before writing |
+| `DATA_ROOT` | `data` | Root directory for parquet output |
+| `BUFFER_CHECKPOINT_ROOT` | `buffer_checkpoint` | Root directory for buffer checkpoint files |
+
+Pipeline timing constants (in `app/config.py`):
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `POLL_INTERVAL_SECONDS` | `30` | Seconds between API requests |
+| `MAX_DATA_AGE_MINS` | `15.0` | Maximum age (minutes) of data to accept into buffer |
+| `FLUSH_BUFFER_MINS` | `5.0` | Additional minutes to wait after max age before flushing |
 
 ## Usage
 

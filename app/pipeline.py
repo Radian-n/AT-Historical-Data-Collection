@@ -17,7 +17,8 @@ from app.config import (
     AT_API_HEADERS,
     BUFFER_CHECKPOINT_ROOT,
     DATA_ROOT,
-    SAFE_DELAY_MINS,
+    FLUSH_BUFFER_MINS,
+    MAX_DATA_AGE_MINS,
 )
 from app.entities.base import BaseEntity
 
@@ -36,19 +37,24 @@ class RealtimePipeline:
         entity: Entity class defining URL, table name, structure,
             parsing, and partitioning.
         headers: HTTP headers for requests (default: AT API headers).
-        safe_delay_mins: Wait after hour ends before writing
-            (default: 16 mins).
+        max_data_age: Maximum age of data to accept into buffer.
+        flush_delay: Wait after hour ends before flushing buffer.
+            Derived from max_data_age + buffer by default.
     """
 
     def __init__(
         self,
         entity: type[BaseEntity],
         headers: dict | None = AT_API_HEADERS,
-        safe_delay_mins: timedelta = timedelta(minutes=SAFE_DELAY_MINS),
+        max_data_age: timedelta = timedelta(minutes=MAX_DATA_AGE_MINS),
+        flush_delay: timedelta = timedelta(
+            minutes=MAX_DATA_AGE_MINS + FLUSH_BUFFER_MINS
+        ),
     ) -> None:
         self.entity = entity
         self.headers = headers
-        self.safe_delay_mins = safe_delay_mins
+        self.max_data_age = max_data_age
+        self.flush_delay = flush_delay
 
         self.log = logging.getLogger(
             f"{self.__class__.__name__}[{entity.TABLE_NAME}]"
@@ -204,22 +210,37 @@ class RealtimePipeline:
         return seen_keys
 
     def _add_to_buffers(self, rows: list[dict[str, Any]]) -> None:
-        """Add row data to buffer dict, using timestamp hour as key."""
+        """Add row data to buffer dict, using timestamp hour as key.
+
+        Rows with timestamps older than max_data_age are discarded to
+        prevent duplicate writes to partitions that have already been
+        flushed.
+        """
+        now = datetime.now(timezone.utc)
         added_rows = 0
+        skipped_stale = 0
+
         for row in rows:
             ts = row[self.entity.FEED_TIMESTAMP]
-            hour_key = ts.replace(minute=0, second=0, microsecond=0)
 
+            if now - ts > self.max_data_age:
+                skipped_stale += 1
+                continue
+
+            hour_key = ts.replace(minute=0, second=0, microsecond=0)
             key = tuple(row[col] for col in self._dedupe_keys)
 
             if key not in self._hour_seen_keys[hour_key]:
                 self._hour_seen_keys[hour_key].add(key)
                 self._hour_buffers[hour_key].append(row)
                 added_rows += 1
+
         self.log.info("%d rows added to buffer(s)", added_rows)
+        if skipped_stale:
+            self.log.warning("%d stale rows discarded", skipped_stale)
 
     def _flush_ready_hours(self) -> None:
-        """Flush hour partitions that are past the safe delay."""
+        """Flush hour partitions that are past the flush delay."""
         for hour_key in self._get_ready_hours():
             self._flush_hour(hour_key)
 
@@ -227,10 +248,10 @@ class RealtimePipeline:
         """Return hour keys that are safe to write.
 
         An hour is ready when the current time is past the hour's end
-        plus the safe delay margin.
+        plus the flush delay margin.
         """
         now = datetime.now(timezone.utc)
-        cutoff = now - timedelta(hours=1) - self.safe_delay_mins
+        cutoff = now - timedelta(hours=1) - self.flush_delay
         return [
             hour_key
             for hour_key in sorted(self._hour_buffers.keys())
