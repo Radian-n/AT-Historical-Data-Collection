@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 import pyarrow as pa
 from google.transit import gtfs_realtime_pb2
@@ -13,16 +13,15 @@ class BaseEntity(ABC):
 
     Subclasses define the complete specification for a GTFS entity:
     - URL and table name for the feed
-    - Column name constants as UPPER_CASE class attributes
+    - Schema mapping columns to PyArrow types
     - How to parse protobuf feed data (normalise)
     - How to derive computed columns (add_derived_columns)
-    - PyArrow schema for storage (pa_schema)
     - Partitioning and deduplication configuration
 
     Required class attributes:
         URL: str - HTTP endpoint for the GTFS-Realtime feed
         TABLE_NAME: str - name for output directory and checkpoint files
-        FEED_TIMESTAMP: str - column name containing the feed timestamp
+        _schema: dict - mapping of Columns to pa.DataType
 
     Required methods:
         - normalise(feed, poll_time) -> list[dict]
@@ -36,7 +35,7 @@ class BaseEntity(ABC):
 
     URL: str
     TABLE_NAME: str
-    FEED_TIMESTAMP: str
+    _schema: ClassVar[dict[Any, pa.DataType]]
 
     @classmethod
     @abstractmethod

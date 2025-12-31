@@ -5,6 +5,7 @@ import json
 import pyarrow as pa
 import pytest
 
+from app.const import Columns
 from app.entities.vehicle_positions import VehiclePositionEntity
 
 pytestmark = pytest.mark.unit
@@ -18,24 +19,24 @@ class TestVehiclePositionSchema:
         schema = VehiclePositionEntity.pa_schema()
 
         expected_columns = [
-            VehiclePositionEntity.POLL_TIME,
-            VehiclePositionEntity.FEED_TIMESTAMP,
-            VehiclePositionEntity.VEHICLE_ID,
-            VehiclePositionEntity.LABEL,
-            VehiclePositionEntity.LICENSE_PLATE,
-            VehiclePositionEntity.TRIP_ID,
-            VehiclePositionEntity.ROUTE_ID,
-            VehiclePositionEntity.DIRECTION_ID,
-            VehiclePositionEntity.SCHEDULE_RELATIONSHIP,
-            VehiclePositionEntity.START_DATE,
-            VehiclePositionEntity.START_TIME,
-            VehiclePositionEntity.LATITUDE,
-            VehiclePositionEntity.LONGITUDE,
-            VehiclePositionEntity.BEARING,
-            VehiclePositionEntity.SPEED,
-            VehiclePositionEntity.ODOMETER,
-            VehiclePositionEntity.OCCUPANCY_STATUS,
-            VehiclePositionEntity.ENTITY_IS_DELETED,
+            Columns.POLL_TIME,
+            Columns.FEED_TIMESTAMP,
+            Columns.VEHICLE_ID,
+            Columns.LABEL,
+            Columns.LICENSE_PLATE,
+            Columns.TRIP_ID,
+            Columns.ROUTE_ID,
+            Columns.DIRECTION_ID,
+            Columns.SCHEDULE_RELATIONSHIP,
+            Columns.START_DATE,
+            Columns.START_TIME,
+            Columns.LATITUDE,
+            Columns.LONGITUDE,
+            Columns.BEARING,
+            Columns.SPEED,
+            Columns.ODOMETER,
+            Columns.OCCUPANCY_STATUS,
+            Columns.ENTITY_IS_DELETED,
         ]
 
         assert set(schema.names) == set(expected_columns)
@@ -44,8 +45,8 @@ class TestVehiclePositionSchema:
         """Timestamp columns include timezone information."""
         schema = VehiclePositionEntity.pa_schema()
 
-        poll_time_type = schema.field(VehiclePositionEntity.POLL_TIME).type
-        feed_ts_type = schema.field(VehiclePositionEntity.FEED_TIMESTAMP).type
+        poll_time_type = schema.field(Columns.POLL_TIME).type
+        feed_ts_type = schema.field(Columns.FEED_TIMESTAMP).type
 
         assert pa.types.is_timestamp(poll_time_type)
         assert pa.types.is_timestamp(feed_ts_type)
@@ -57,13 +58,13 @@ class TestVehiclePositionSchema:
         schema = VehiclePositionEntity.pa_schema()
 
         string_cols = [
-            VehiclePositionEntity.VEHICLE_ID,
-            VehiclePositionEntity.LABEL,
-            VehiclePositionEntity.LICENSE_PLATE,
-            VehiclePositionEntity.TRIP_ID,
-            VehiclePositionEntity.ROUTE_ID,
-            VehiclePositionEntity.START_DATE,
-            VehiclePositionEntity.START_TIME,
+            Columns.VEHICLE_ID,
+            Columns.LABEL,
+            Columns.LICENSE_PLATE,
+            Columns.TRIP_ID,
+            Columns.ROUTE_ID,
+            Columns.START_DATE,
+            Columns.START_TIME,
         ]
 
         for col in string_cols:
@@ -76,37 +77,24 @@ class TestVehiclePositionSchema:
         schema = VehiclePositionEntity.pa_schema()
 
         # Float64 columns (high precision needed)
-        assert schema.field(VehiclePositionEntity.LATITUDE).type == pa.float64()
-        assert (
-            schema.field(VehiclePositionEntity.LONGITUDE).type == pa.float64()
-        )
-        assert schema.field(VehiclePositionEntity.ODOMETER).type == pa.float64()
+        assert schema.field(Columns.LATITUDE).type == pa.float64()
+        assert schema.field(Columns.LONGITUDE).type == pa.float64()
+        assert schema.field(Columns.ODOMETER).type == pa.float64()
 
         # Float32 columns (lower precision OK)
-        assert schema.field(VehiclePositionEntity.BEARING).type == pa.float32()
-        assert schema.field(VehiclePositionEntity.SPEED).type == pa.float32()
+        assert schema.field(Columns.BEARING).type == pa.float32()
+        assert schema.field(Columns.SPEED).type == pa.float32()
 
         # Integer columns
-        assert (
-            schema.field(VehiclePositionEntity.DIRECTION_ID).type == pa.int32()
-        )
-        assert (
-            schema.field(VehiclePositionEntity.SCHEDULE_RELATIONSHIP).type
-            == pa.int32()
-        )
-        assert (
-            schema.field(VehiclePositionEntity.OCCUPANCY_STATUS).type
-            == pa.int32()
-        )
+        assert schema.field(Columns.DIRECTION_ID).type == pa.int32()
+        assert schema.field(Columns.SCHEDULE_RELATIONSHIP).type == pa.int32()
+        assert schema.field(Columns.OCCUPANCY_STATUS).type == pa.int32()
 
     def test_bool_column(self) -> None:
         """Boolean column has bool type."""
         schema = VehiclePositionEntity.pa_schema()
 
-        assert (
-            schema.field(VehiclePositionEntity.ENTITY_IS_DELETED).type
-            == pa.bool_()
-        )
+        assert schema.field(Columns.ENTITY_IS_DELETED).type == pa.bool_()
 
     def test_schema_metadata_present(self) -> None:
         """Schema includes expected metadata."""
@@ -140,9 +128,9 @@ class TestVehiclePositionSchema:
         partition_cols = VehiclePositionEntity.partition_cols()
 
         assert len(partition_cols) > 0
-        assert VehiclePositionEntity.FEED_DATE in partition_cols
-        assert VehiclePositionEntity.FEED_HOUR in partition_cols
-        assert VehiclePositionEntity.ROUTE_ID in partition_cols
+        assert Columns.FEED_DATE in partition_cols
+        assert Columns.FEED_HOUR in partition_cols
+        assert Columns.ROUTE_ID in partition_cols
 
     def test_can_create_table_from_schema(
         self, sample_rows: list[dict]
@@ -166,7 +154,7 @@ class TestAddDerivedColumns:
 
         result = VehiclePositionEntity.add_derived_columns(table)
 
-        assert VehiclePositionEntity.FEED_DATE in result.column_names
+        assert Columns.FEED_DATE in result.column_names
 
     def test_adds_feed_hour_column(self, sample_rows: list[dict]) -> None:
         """FEED_HOUR column is added."""
@@ -175,7 +163,7 @@ class TestAddDerivedColumns:
 
         result = VehiclePositionEntity.add_derived_columns(table)
 
-        assert VehiclePositionEntity.FEED_HOUR in result.column_names
+        assert Columns.FEED_HOUR in result.column_names
 
     def test_feed_date_format(self, sample_rows: list[dict]) -> None:
         """FEED_DATE is formatted as YYYY-MM-DD."""
@@ -184,7 +172,7 @@ class TestAddDerivedColumns:
 
         result = VehiclePositionEntity.add_derived_columns(table)
 
-        feed_dates = result[VehiclePositionEntity.FEED_DATE].to_pylist()
+        feed_dates = result[Columns.FEED_DATE].to_pylist()
         # sample_rows have timestamps on 2024-12-15
         assert feed_dates[0] == "2024-12-15"
 
@@ -195,7 +183,7 @@ class TestAddDerivedColumns:
 
         result = VehiclePositionEntity.add_derived_columns(table)
 
-        feed_hours = result[VehiclePositionEntity.FEED_HOUR].to_pylist()
+        feed_hours = result[Columns.FEED_HOUR].to_pylist()
         # sample_rows have timestamps at 10:30
         assert feed_hours[0] == 10
 

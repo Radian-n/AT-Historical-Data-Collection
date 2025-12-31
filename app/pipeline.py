@@ -20,6 +20,7 @@ from app.config import (
     FLUSH_BUFFER_MINS,
     MAX_DATA_AGE_MINS,
 )
+from app.const import Columns
 from app.entities.base import BaseEntity
 
 
@@ -236,7 +237,7 @@ class RealtimePipeline:
         skipped_stale = 0
 
         for row in rows:
-            ts = row[self.entity.FEED_TIMESTAMP]
+            ts = row[Columns.FEED_TIMESTAMP]
 
             if now - ts > self.max_data_age:
                 skipped_stale += 1

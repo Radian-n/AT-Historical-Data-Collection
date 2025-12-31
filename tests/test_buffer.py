@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.const import Columns
 from app.entities.vehicle_positions import VehiclePositionEntity
 from app.pipeline import RealtimePipeline
 
@@ -22,24 +23,24 @@ def make_row(
         poll_time = feed_timestamp + timedelta(seconds=5)
 
     return {
-        VehiclePositionEntity.POLL_TIME: poll_time,
-        VehiclePositionEntity.FEED_TIMESTAMP: feed_timestamp,
-        VehiclePositionEntity.VEHICLE_ID: vehicle_id,
-        VehiclePositionEntity.LABEL: "Bus",
-        VehiclePositionEntity.LICENSE_PLATE: "ABC123",
-        VehiclePositionEntity.TRIP_ID: "trip_1",
-        VehiclePositionEntity.ROUTE_ID: "route_1",
-        VehiclePositionEntity.DIRECTION_ID: 0,
-        VehiclePositionEntity.SCHEDULE_RELATIONSHIP: 0,
-        VehiclePositionEntity.START_DATE: "20241215",
-        VehiclePositionEntity.START_TIME: "10:00:00",
-        VehiclePositionEntity.LATITUDE: -36.85,
-        VehiclePositionEntity.LONGITUDE: 174.76,
-        VehiclePositionEntity.BEARING: 90.0,
-        VehiclePositionEntity.SPEED: 10.0,
-        VehiclePositionEntity.ODOMETER: 5000.0,
-        VehiclePositionEntity.OCCUPANCY_STATUS: 1,
-        VehiclePositionEntity.ENTITY_IS_DELETED: False,
+        Columns.POLL_TIME: poll_time,
+        Columns.FEED_TIMESTAMP: feed_timestamp,
+        Columns.VEHICLE_ID: vehicle_id,
+        Columns.LABEL: "Bus",
+        Columns.LICENSE_PLATE: "ABC123",
+        Columns.TRIP_ID: "trip_1",
+        Columns.ROUTE_ID: "route_1",
+        Columns.DIRECTION_ID: 0,
+        Columns.SCHEDULE_RELATIONSHIP: 0,
+        Columns.START_DATE: "20241215",
+        Columns.START_TIME: "10:00:00",
+        Columns.LATITUDE: -36.85,
+        Columns.LONGITUDE: 174.76,
+        Columns.BEARING: 90.0,
+        Columns.SPEED: 10.0,
+        Columns.ODOMETER: 5000.0,
+        Columns.OCCUPANCY_STATUS: 1,
+        Columns.ENTITY_IS_DELETED: False,
     }
 
 

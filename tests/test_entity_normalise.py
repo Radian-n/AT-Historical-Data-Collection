@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 from google.transit import gtfs_realtime_pb2
 
+from app.const import Columns
 from app.entities.vehicle_positions import VehiclePositionEntity
 
 pytestmark = pytest.mark.unit
@@ -24,8 +25,8 @@ class TestVehiclePositionNormalise:
         )
 
         assert len(rows) == 2
-        assert rows[0][VehiclePositionEntity.VEHICLE_ID] == "vehicle_001"
-        assert rows[1][VehiclePositionEntity.VEHICLE_ID] == "vehicle_002"
+        assert rows[0][Columns.VEHICLE_ID] == "vehicle_001"
+        assert rows[1][Columns.VEHICLE_ID] == "vehicle_002"
 
     def test_poll_time_preserved(
         self,
@@ -38,7 +39,7 @@ class TestVehiclePositionNormalise:
         )
 
         for row in rows:
-            assert row[VehiclePositionEntity.POLL_TIME] == sample_poll_time
+            assert row[Columns.POLL_TIME] == sample_poll_time
 
     def test_feed_timestamp_converted(
         self,
@@ -54,7 +55,7 @@ class TestVehiclePositionNormalise:
         expected_dt = datetime.fromtimestamp(
             sample_feed_timestamp, tz=timezone.utc
         )
-        assert rows[0][VehiclePositionEntity.FEED_TIMESTAMP] == expected_dt
+        assert rows[0][Columns.FEED_TIMESTAMP] == expected_dt
 
     def test_empty_feed(self, sample_poll_time: datetime) -> None:
         """Empty feed returns empty list."""
@@ -102,10 +103,10 @@ class TestVehiclePositionNormalise:
         rows = VehiclePositionEntity.normalise(feed, sample_poll_time)
 
         assert len(rows) == 1
-        assert rows[0][VehiclePositionEntity.LABEL] is None
-        assert rows[0][VehiclePositionEntity.LICENSE_PLATE] is None
-        assert rows[0][VehiclePositionEntity.TRIP_ID] is None
-        assert rows[0][VehiclePositionEntity.ROUTE_ID] is None
+        assert rows[0][Columns.LABEL] is None
+        assert rows[0][Columns.LICENSE_PLATE] is None
+        assert rows[0][Columns.TRIP_ID] is None
+        assert rows[0][Columns.ROUTE_ID] is None
 
     def test_zero_numeric_fields_preserved(
         self, sample_poll_time: datetime
@@ -130,14 +131,14 @@ class TestVehiclePositionNormalise:
         rows = VehiclePositionEntity.normalise(feed, sample_poll_time)
 
         assert len(rows) == 1
-        assert rows[0][VehiclePositionEntity.LATITUDE] == 0.0
-        assert rows[0][VehiclePositionEntity.LONGITUDE] == 0.0
-        assert rows[0][VehiclePositionEntity.BEARING] == 0.0
-        assert rows[0][VehiclePositionEntity.SPEED] == 0.0
-        assert rows[0][VehiclePositionEntity.ODOMETER] == 0.0
-        assert rows[0][VehiclePositionEntity.DIRECTION_ID] == 0
-        assert rows[0][VehiclePositionEntity.SCHEDULE_RELATIONSHIP] == 0
-        assert rows[0][VehiclePositionEntity.OCCUPANCY_STATUS] == 0
+        assert rows[0][Columns.LATITUDE] == 0.0
+        assert rows[0][Columns.LONGITUDE] == 0.0
+        assert rows[0][Columns.BEARING] == 0.0
+        assert rows[0][Columns.SPEED] == 0.0
+        assert rows[0][Columns.ODOMETER] == 0.0
+        assert rows[0][Columns.DIRECTION_ID] == 0
+        assert rows[0][Columns.SCHEDULE_RELATIONSHIP] == 0
+        assert rows[0][Columns.OCCUPANCY_STATUS] == 0
 
     def test_is_deleted_flag(self, sample_poll_time: datetime) -> None:
         """Entity is_deleted flag is captured."""
@@ -155,7 +156,7 @@ class TestVehiclePositionNormalise:
         rows = VehiclePositionEntity.normalise(feed, sample_poll_time)
 
         assert len(rows) == 1
-        assert rows[0][VehiclePositionEntity.ENTITY_IS_DELETED] is True
+        assert rows[0][Columns.ENTITY_IS_DELETED] is True
 
     def test_all_fields_extracted(
         self,
@@ -168,24 +169,24 @@ class TestVehiclePositionNormalise:
         )
 
         expected_keys = {
-            VehiclePositionEntity.POLL_TIME,
-            VehiclePositionEntity.FEED_TIMESTAMP,
-            VehiclePositionEntity.VEHICLE_ID,
-            VehiclePositionEntity.LABEL,
-            VehiclePositionEntity.LICENSE_PLATE,
-            VehiclePositionEntity.TRIP_ID,
-            VehiclePositionEntity.ROUTE_ID,
-            VehiclePositionEntity.DIRECTION_ID,
-            VehiclePositionEntity.SCHEDULE_RELATIONSHIP,
-            VehiclePositionEntity.START_DATE,
-            VehiclePositionEntity.START_TIME,
-            VehiclePositionEntity.LATITUDE,
-            VehiclePositionEntity.LONGITUDE,
-            VehiclePositionEntity.BEARING,
-            VehiclePositionEntity.SPEED,
-            VehiclePositionEntity.ODOMETER,
-            VehiclePositionEntity.OCCUPANCY_STATUS,
-            VehiclePositionEntity.ENTITY_IS_DELETED,
+            Columns.POLL_TIME,
+            Columns.FEED_TIMESTAMP,
+            Columns.VEHICLE_ID,
+            Columns.LABEL,
+            Columns.LICENSE_PLATE,
+            Columns.TRIP_ID,
+            Columns.ROUTE_ID,
+            Columns.DIRECTION_ID,
+            Columns.SCHEDULE_RELATIONSHIP,
+            Columns.START_DATE,
+            Columns.START_TIME,
+            Columns.LATITUDE,
+            Columns.LONGITUDE,
+            Columns.BEARING,
+            Columns.SPEED,
+            Columns.ODOMETER,
+            Columns.OCCUPANCY_STATUS,
+            Columns.ENTITY_IS_DELETED,
         }
 
         assert set(rows[0].keys()) == expected_keys

@@ -18,6 +18,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 # Import after pytest_configure sets environment
+from app.const import Columns  # noqa: E402
 from app.entities.vehicle_positions import VehiclePositionEntity  # noqa: E402
 
 
@@ -98,26 +99,26 @@ def sample_feed_message(sample_feed_timestamp: int) -> gtfs_realtime_pb2.FeedMes
 def sample_row(sample_poll_time: datetime) -> dict[str, Any]:
     """Return a single normalized row dict."""
     return {
-        VehiclePositionEntity.POLL_TIME: sample_poll_time,
-        VehiclePositionEntity.FEED_TIMESTAMP: datetime(
+        Columns.POLL_TIME: sample_poll_time,
+        Columns.FEED_TIMESTAMP: datetime(
             2024, 12, 15, 10, 30, 0, tzinfo=timezone.utc
         ),
-        VehiclePositionEntity.VEHICLE_ID: "vehicle_001",
-        VehiclePositionEntity.LABEL: "Bus 101",
-        VehiclePositionEntity.LICENSE_PLATE: "ABC123",
-        VehiclePositionEntity.TRIP_ID: "trip_100",
-        VehiclePositionEntity.ROUTE_ID: "route_50",
-        VehiclePositionEntity.DIRECTION_ID: 0,
-        VehiclePositionEntity.SCHEDULE_RELATIONSHIP: 0,
-        VehiclePositionEntity.START_DATE: "20241215",
-        VehiclePositionEntity.START_TIME: "10:00:00",
-        VehiclePositionEntity.LATITUDE: -36.8485,
-        VehiclePositionEntity.LONGITUDE: 174.7633,
-        VehiclePositionEntity.BEARING: 90.0,
-        VehiclePositionEntity.SPEED: 12.5,
-        VehiclePositionEntity.ODOMETER: 50000.0,
-        VehiclePositionEntity.OCCUPANCY_STATUS: 1,
-        VehiclePositionEntity.ENTITY_IS_DELETED: False,
+        Columns.VEHICLE_ID: "vehicle_001",
+        Columns.LABEL: "Bus 101",
+        Columns.LICENSE_PLATE: "ABC123",
+        Columns.TRIP_ID: "trip_100",
+        Columns.ROUTE_ID: "route_50",
+        Columns.DIRECTION_ID: 0,
+        Columns.SCHEDULE_RELATIONSHIP: 0,
+        Columns.START_DATE: "20241215",
+        Columns.START_TIME: "10:00:00",
+        Columns.LATITUDE: -36.8485,
+        Columns.LONGITUDE: 174.7633,
+        Columns.BEARING: 90.0,
+        Columns.SPEED: 12.5,
+        Columns.ODOMETER: 50000.0,
+        Columns.OCCUPANCY_STATUS: 1,
+        Columns.ENTITY_IS_DELETED: False,
     }
 
 
@@ -125,19 +126,19 @@ def sample_row(sample_poll_time: datetime) -> dict[str, Any]:
 def sample_rows(sample_row: dict[str, Any]) -> list[dict[str, Any]]:
     """Return a list of normalized row dicts."""
     row2 = sample_row.copy()
-    row2[VehiclePositionEntity.VEHICLE_ID] = "vehicle_002"
-    row2[VehiclePositionEntity.FEED_TIMESTAMP] = datetime(
+    row2[Columns.VEHICLE_ID] = "vehicle_002"
+    row2[Columns.FEED_TIMESTAMP] = datetime(
         2024, 12, 15, 10, 30, 30, tzinfo=timezone.utc
     )
-    row2[VehiclePositionEntity.LABEL] = "Bus 202"
-    row2[VehiclePositionEntity.ROUTE_ID] = "route_75"
+    row2[Columns.LABEL] = "Bus 202"
+    row2[Columns.ROUTE_ID] = "route_75"
 
     row3 = sample_row.copy()
-    row3[VehiclePositionEntity.VEHICLE_ID] = "vehicle_003"
-    row3[VehiclePositionEntity.FEED_TIMESTAMP] = datetime(
+    row3[Columns.VEHICLE_ID] = "vehicle_003"
+    row3[Columns.FEED_TIMESTAMP] = datetime(
         2024, 12, 15, 10, 31, 0, tzinfo=timezone.utc
     )
-    row3[VehiclePositionEntity.LABEL] = "Bus 303"
-    row3[VehiclePositionEntity.ROUTE_ID] = "route_100"
+    row3[Columns.LABEL] = "Bus 303"
+    row3[Columns.ROUTE_ID] = "route_100"
 
     return [sample_row, row2, row3]
