@@ -59,6 +59,38 @@ uv run python main.py
 
 The application runs continuously, polling the API on a schedule and writing hourly Parquet files to `data/`.
 
+## Testing
+
+Install test dependencies:
+
+```bash
+uv sync --extra test
+```
+
+Run tests:
+
+```bash
+uv run pytest tests/ -v
+```
+
+Run with coverage:
+
+```bash
+uv run pytest tests/ --cov=app
+```
+
+### Test Structure
+
+```
+tests/
+├── conftest.py              # Shared fixtures (protobuf, sample rows)
+├── test_buffer.py           # Buffer management and hour grouping
+├── test_config.py           # Environment variable validation
+├── test_dedupe.py           # Deduplication logic
+├── test_entity_normalise.py # Protobuf parsing
+└── test_entity_schema.py    # Schema validation and derived columns
+```
+
 ## Output Structure
 
 ```
@@ -80,6 +112,7 @@ app/
 └── entities/           # Entity definitions
     ├── base.py         # BaseEntity abstract class
     └── vehicle_positions.py  # VehiclePositionEntity
+tests/                  # Test suite
 main.py                 # Entry point
 ```
 
