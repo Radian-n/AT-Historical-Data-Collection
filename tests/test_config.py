@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 
 class TestConfigValidation:
     """Tests for app/config.py module."""

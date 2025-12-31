@@ -7,6 +7,8 @@ from google.transit import gtfs_realtime_pb2
 
 from app.entities.vehicle_positions import VehiclePositionEntity
 
+pytestmark = pytest.mark.unit
+
 
 class TestVehiclePositionNormalise:
     """Tests for VehiclePositionEntity.normalise()."""

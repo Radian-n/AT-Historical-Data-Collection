@@ -8,6 +8,8 @@ import pytest
 from app.entities.vehicle_positions import VehiclePositionEntity
 from app.pipeline import RealtimePipeline
 
+pytestmark = pytest.mark.unit
+
 
 def make_row(
     vehicle_id: str,
@@ -38,7 +40,7 @@ class TestDedupe:
             VehiclePositionEntity.FEED_TIMESTAMP,
         ]
 
-        result = RealtimePipeline._dedupe(None, rows, key_cols)
+        result = RealtimePipeline._dedupe(rows, key_cols)
 
         assert len(result) == 3
 
@@ -54,7 +56,7 @@ class TestDedupe:
             VehiclePositionEntity.FEED_TIMESTAMP,
         ]
 
-        result = RealtimePipeline._dedupe(None, rows, key_cols)
+        result = RealtimePipeline._dedupe(rows, key_cols)
 
         assert len(result) == 1
 
@@ -70,7 +72,7 @@ class TestDedupe:
             VehiclePositionEntity.FEED_TIMESTAMP,
         ]
 
-        result = RealtimePipeline._dedupe(None, rows, key_cols)
+        result = RealtimePipeline._dedupe(rows, key_cols)
 
         assert len(result) == 1
         assert result[0][VehiclePositionEntity.LABEL] == "First Label"
@@ -82,7 +84,7 @@ class TestDedupe:
             VehiclePositionEntity.FEED_TIMESTAMP,
         ]
 
-        result = RealtimePipeline._dedupe(None, [], key_cols)
+        result = RealtimePipeline._dedupe([], key_cols)
 
         assert result == []
 
@@ -95,7 +97,7 @@ class TestDedupe:
             VehiclePositionEntity.FEED_TIMESTAMP,
         ]
 
-        result = RealtimePipeline._dedupe(None, rows, key_cols)
+        result = RealtimePipeline._dedupe(rows, key_cols)
 
         assert len(result) == 1
         assert result[0][VehiclePositionEntity.VEHICLE_ID] == "v1"
@@ -117,7 +119,7 @@ class TestDedupe:
         ]
 
         with pytest.raises(RuntimeError, match="None value"):
-            RealtimePipeline._dedupe(None, rows, key_cols)
+            RealtimePipeline._dedupe(rows, key_cols)
 
     def test_different_timestamps_not_deduplicated(self) -> None:
         """Same vehicle at different times are separate records."""
@@ -132,7 +134,7 @@ class TestDedupe:
             VehiclePositionEntity.FEED_TIMESTAMP,
         ]
 
-        result = RealtimePipeline._dedupe(None, rows, key_cols)
+        result = RealtimePipeline._dedupe(rows, key_cols)
 
         assert len(result) == 2
 
@@ -150,7 +152,7 @@ class TestDedupe:
             VehiclePositionEntity.FEED_TIMESTAMP,
         ]
 
-        result = RealtimePipeline._dedupe(None, rows, key_cols)
+        result = RealtimePipeline._dedupe(rows, key_cols)
 
         assert len(result) == 3
         assert result[0][VehiclePositionEntity.VEHICLE_ID] == "v3"

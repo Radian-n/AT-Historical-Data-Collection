@@ -1,6 +1,5 @@
 """Tests for buffer management logic."""
 
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
@@ -9,6 +8,8 @@ import pytest
 
 from app.entities.vehicle_positions import VehiclePositionEntity
 from app.pipeline import RealtimePipeline
+
+pytestmark = pytest.mark.unit
 
 
 def make_row(
@@ -43,11 +44,8 @@ def make_row(
 
 
 @pytest.fixture
-def pipeline(tmp_path, monkeypatch) -> RealtimePipeline:
+def pipeline(tmp_path) -> RealtimePipeline:
     """Create a pipeline with mocked checkpoint paths."""
-    # Set env var for config import
-    monkeypatch.setenv("AT_API_KEY", "test_key")
-
     # Patch checkpoint paths to use tmp_path
     with patch("app.pipeline.BUFFER_CHECKPOINT_ROOT", tmp_path):
         p = RealtimePipeline(
@@ -70,10 +68,7 @@ class TestAddToBuffers:
         ts = datetime(2024, 12, 15, 10, 30, 0, tzinfo=timezone.utc)
         row = make_row("v1", ts)
 
-        with patch("app.pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value = now
-
-            pipeline._add_to_buffers([row])
+        pipeline._add_to_buffers([row], now=now)
 
         hour_key = ts.replace(minute=0, second=0, microsecond=0)
         assert hour_key in pipeline._hour_buffers
@@ -91,10 +86,7 @@ class TestAddToBuffers:
             make_row("v2", ts2),
         ]
 
-        with patch("app.pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value = now
-
-            pipeline._add_to_buffers(rows)
+        pipeline._add_to_buffers(rows, now=now)
 
         hour_key = ts1.replace(minute=0, second=0, microsecond=0)
         assert len(pipeline._hour_buffers[hour_key]) == 2
@@ -105,11 +97,8 @@ class TestAddToBuffers:
         ts = datetime(2024, 12, 15, 10, 30, 0, tzinfo=timezone.utc)
         row = make_row("v1", ts)
 
-        with patch("app.pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value = now
-
-            pipeline._add_to_buffers([row])
-            pipeline._add_to_buffers([row])  # Add again
+        pipeline._add_to_buffers([row], now=now)
+        pipeline._add_to_buffers([row], now=now)  # Add again
 
         hour_key = ts.replace(minute=0, second=0, microsecond=0)
         assert len(pipeline._hour_buffers[hour_key]) == 1
@@ -121,10 +110,7 @@ class TestAddToBuffers:
         stale_ts = datetime(2024, 12, 15, 10, 15, 0, tzinfo=timezone.utc)
         row = make_row("v1", stale_ts)
 
-        with patch("app.pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value = now
-
-            pipeline._add_to_buffers([row])
+        pipeline._add_to_buffers([row], now=now)
 
         # Buffer should be empty (stale row discarded)
         assert len(pipeline._hour_buffers) == 0
@@ -140,10 +126,7 @@ class TestAddToBuffers:
             make_row("v2", ts_11),
         ]
 
-        with patch("app.pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value = now
-
-            pipeline._add_to_buffers(rows)
+        pipeline._add_to_buffers(rows, now=now)
 
         hour_10 = datetime(2024, 12, 15, 10, 0, 0, tzinfo=timezone.utc)
         hour_11 = datetime(2024, 12, 15, 11, 0, 0, tzinfo=timezone.utc)
@@ -164,10 +147,7 @@ class TestGetReadyHours:
         # Current time: 11:10 (1 hour + 5 min delay past hour 10)
         now = datetime(2024, 12, 15, 11, 10, 0, tzinfo=timezone.utc)
 
-        with patch("app.pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value = now
-
-            ready = pipeline._get_ready_hours()
+        ready = pipeline._get_ready_hours(now=now)
 
         assert hour_9 in ready
 
@@ -180,10 +160,7 @@ class TestGetReadyHours:
         # Current time: 11:10 (same hour)
         now = datetime(2024, 12, 15, 11, 10, 0, tzinfo=timezone.utc)
 
-        with patch("app.pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value = now
-
-            ready = pipeline._get_ready_hours()
+        ready = pipeline._get_ready_hours(now=now)
 
         assert hour_11 not in ready
 
@@ -193,10 +170,7 @@ class TestGetReadyHours:
         """Empty buffer returns empty ready list."""
         now = datetime(2024, 12, 15, 11, 10, 0, tzinfo=timezone.utc)
 
-        with patch("app.pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value = now
-
-            ready = pipeline._get_ready_hours()
+        ready = pipeline._get_ready_hours(now=now)
 
         assert ready == []
 
@@ -212,10 +186,7 @@ class TestGetReadyHours:
         # Current time: 11:10
         now = datetime(2024, 12, 15, 11, 10, 0, tzinfo=timezone.utc)
 
-        with patch("app.pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value = now
-
-            ready = pipeline._get_ready_hours()
+        ready = pipeline._get_ready_hours(now=now)
 
         assert ready == [hour_8, hour_9]
 
@@ -223,34 +194,40 @@ class TestGetReadyHours:
 class TestRebuildSeenKeys:
     """Tests for RealtimePipeline._rebuild_seen_keys()."""
 
-    def test_rebuild_from_buffered_rows(
-        self, pipeline: RealtimePipeline
-    ) -> None:
+    def test_rebuild_from_buffered_rows(self) -> None:
         """Seen keys are rebuilt from buffered rows."""
         hour = datetime(2024, 12, 15, 10, 0, 0, tzinfo=timezone.utc)
         ts = datetime(2024, 12, 15, 10, 30, 0, tzinfo=timezone.utc)
         row = make_row("v1", ts)
         hour_buffers = {hour: [row]}
+        dedupe_keys = VehiclePositionEntity.dedupe_keys()
 
-        seen_keys = pipeline._rebuild_seen_keys(hour_buffers)
+        seen_keys = RealtimePipeline._rebuild_seen_keys(
+            hour_buffers, dedupe_keys
+        )
 
         expected_key = ("v1", ts)
         assert expected_key in seen_keys[hour]
 
-    def test_rebuild_empty_buffers(self, pipeline: RealtimePipeline) -> None:
+    def test_rebuild_empty_buffers(self) -> None:
         """Empty buffers produce empty seen keys."""
-        seen_keys = pipeline._rebuild_seen_keys({})
+        dedupe_keys = VehiclePositionEntity.dedupe_keys()
+
+        seen_keys = RealtimePipeline._rebuild_seen_keys({}, dedupe_keys)
 
         assert len(seen_keys) == 0
 
-    def test_rebuild_multiple_rows(self, pipeline: RealtimePipeline) -> None:
+    def test_rebuild_multiple_rows(self) -> None:
         """Multiple rows produce multiple seen keys."""
         hour = datetime(2024, 12, 15, 10, 0, 0, tzinfo=timezone.utc)
         ts1 = datetime(2024, 12, 15, 10, 30, 0, tzinfo=timezone.utc)
         ts2 = datetime(2024, 12, 15, 10, 31, 0, tzinfo=timezone.utc)
         rows = [make_row("v1", ts1), make_row("v2", ts2)]
         hour_buffers = {hour: rows}
+        dedupe_keys = VehiclePositionEntity.dedupe_keys()
 
-        seen_keys = pipeline._rebuild_seen_keys(hour_buffers)
+        seen_keys = RealtimePipeline._rebuild_seen_keys(
+            hour_buffers, dedupe_keys
+        )
 
         assert len(seen_keys[hour]) == 2

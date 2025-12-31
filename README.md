@@ -70,26 +70,28 @@ uv sync --extra test
 Run tests:
 
 ```bash
-uv run pytest tests/ -v
-```
-
-Run with coverage:
-
-```bash
-uv run pytest tests/ --cov=app
+uv run pytest              # Run all tests (verbose by default)
+uv run pytest -m unit      # Run unit tests only
+uv run pytest --cov=app    # Run with coverage report
 ```
 
 ### Test Structure
 
 ```
 tests/
-├── conftest.py              # Shared fixtures (protobuf, sample rows)
+├── conftest.py              # Shared fixtures and pytest_configure hook
 ├── test_buffer.py           # Buffer management and hour grouping
 ├── test_config.py           # Environment variable validation
 ├── test_dedupe.py           # Deduplication logic
 ├── test_entity_normalise.py # Protobuf parsing
 └── test_entity_schema.py    # Schema validation and derived columns
 ```
+
+### Test Configuration
+
+- **pytest config**: Defined in `pyproject.toml` (test paths, markers, default options)
+- **Environment**: `AT_API_KEY` is set automatically by `pytest_configure` hook
+- **Markers**: Tests are marked with `@pytest.mark.unit` or `@pytest.mark.integration`
 
 ## Output Structure
 

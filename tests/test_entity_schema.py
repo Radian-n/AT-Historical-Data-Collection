@@ -3,8 +3,11 @@
 import json
 
 import pyarrow as pa
+import pytest
 
 from app.entities.vehicle_positions import VehiclePositionEntity
+
+pytestmark = pytest.mark.unit
 
 
 class TestVehiclePositionSchema:
