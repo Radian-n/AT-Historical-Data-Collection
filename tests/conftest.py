@@ -1,12 +1,24 @@
 """Shared fixtures for tests."""
 
+import os
 from datetime import datetime, timezone
 from typing import Any
 
 import pytest
 from google.transit import gtfs_realtime_pb2
 
-from app.entities.vehicle_positions import VehiclePositionEntity
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Set up test environment before collection.
+
+    This runs before any tests are collected, ensuring environment
+    variables are set before app.config is imported.
+    """
+    os.environ.setdefault("AT_API_KEY", "test_api_key")
+
+
+# Import after pytest_configure sets environment
+from app.entities.vehicle_positions import VehiclePositionEntity  # noqa: E402
 
 
 @pytest.fixture
