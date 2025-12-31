@@ -65,6 +65,7 @@ class RealtimePipeline:
         self._partition_cols: list[str] = self.entity.partition_cols()
         self._dedupe_keys: list[str] = self.entity.dedupe_keys()
         self._verify_dedupe_keys(self._dedupe_keys, self._schema.names)
+        self.log.info("Initialised")
 
         # Runtime state
         self._last_md5: str | None = None
@@ -136,7 +137,8 @@ class RealtimePipeline:
     # Feed processing
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _decode_feed(self, raw_bytes: bytes) -> gtfs_realtime_pb2.FeedMessage:
+    @staticmethod
+    def _decode_feed(raw_bytes: bytes) -> gtfs_realtime_pb2.FeedMessage:
         """Decode raw GTFS-Realtime protobuf bytes into a FeedMessage."""
         feed = gtfs_realtime_pb2.FeedMessage()
         feed.ParseFromString(raw_bytes)
@@ -190,7 +192,9 @@ class RealtimePipeline:
                 self._buffer_print(hour_seen_keys),
             )
         else:
-            hour_seen_keys = self._rebuild_seen_keys(hour_buffers)
+            hour_seen_keys = self._rebuild_seen_keys(
+                hour_buffers, self._dedupe_keys
+            )
             self.log.info(
                 "Rebuilt hour seen keys from hour buffers: %s",
                 self._buffer_print(hour_seen_keys),
@@ -198,25 +202,36 @@ class RealtimePipeline:
 
         return hour_buffers, hour_seen_keys
 
+    @staticmethod
     def _rebuild_seen_keys(
-        self, hour_buffers: dict[datetime, list[dict[str, Any]]]
+        hour_buffers: dict[datetime, list[dict[str, Any]]],
+        dedupe_keys: list[str],
     ) -> dict[datetime, set[tuple[Any, ...]]]:
         """Rebuild seen keys set from hour buffers."""
-        seen_keys = defaultdict(set)
+        seen_keys: dict[datetime, set[tuple[Any, ...]]] = defaultdict(set)
         for hour, rows in hour_buffers.items():
             for row in rows:
-                key = tuple(row[col] for col in self._dedupe_keys)
+                key = tuple(row[col] for col in dedupe_keys)
                 seen_keys[hour].add(key)
         return seen_keys
 
-    def _add_to_buffers(self, rows: list[dict[str, Any]]) -> None:
+    def _add_to_buffers(
+        self,
+        rows: list[dict[str, Any]],
+        now: datetime | None = None,
+    ) -> None:
         """Add row data to buffer dict, using timestamp hour as key.
 
         Rows with timestamps older than max_data_age are discarded to
         prevent duplicate writes to partitions that have already been
         flushed.
+
+        Args:
+            rows: List of row dicts to add to buffer.
+            now: Current time for staleness check. Defaults to UTC now.
         """
-        now = datetime.now(timezone.utc)
+        if now is None:
+            now = datetime.now(timezone.utc)
         added_rows = 0
         skipped_stale = 0
 
@@ -244,13 +259,17 @@ class RealtimePipeline:
         for hour_key in self._get_ready_hours():
             self._flush_hour(hour_key)
 
-    def _get_ready_hours(self) -> list[datetime]:
+    def _get_ready_hours(self, now: datetime | None = None) -> list[datetime]:
         """Return hour keys that are safe to write.
 
         An hour is ready when the current time is past the hour's end
         plus the flush delay margin.
+
+        Args:
+            now: Current time for cutoff calculation. Defaults to UTC now.
         """
-        now = datetime.now(timezone.utc)
+        if now is None:
+            now = datetime.now(timezone.utc)
         cutoff = now - timedelta(hours=1) - self.flush_delay
         return [
             hour_key
@@ -289,10 +308,11 @@ class RealtimePipeline:
 
         self.log.debug("Buffer checkpoint saved")
 
-    def _buffer_print(self, buffer) -> str:
-        """The length of each hour in the buffer"""
+    @staticmethod
+    def _buffer_print(buffer: dict) -> str:
+        """Format buffer state for logging (hour: count pairs)."""
         return ", ".join(
-            [f"{k:%Y-%m-%d %H}hr: {len(v)}" for k, v in buffer.items()]
+            f"{k:%Y-%m-%d %H}hr: {len(v)}" for k, v in buffer.items()
         )
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -315,12 +335,13 @@ class RealtimePipeline:
     # Utilities
     # ──────────────────────────────────────────────────────────────────────────
 
+    @staticmethod
     def _dedupe(
-        self, rows: list[dict[str, Any]], key_names: list[str]
+        rows: list[dict[str, Any]], key_names: list[str]
     ) -> list[dict[str, Any]]:
         """Deduplicate rows in a list based on key_names."""
-        seen = set()
-        out = []
+        seen: set[tuple[Any, ...]] = set()
+        out: list[dict[str, Any]] = []
         for row in rows:
             key = tuple(row.get(col) for col in key_names)
             if None in key:
@@ -330,8 +351,9 @@ class RealtimePipeline:
                 out.append(row)
         return out
 
+    @staticmethod
     def _verify_dedupe_keys(
-        self, dedupe_keys: list[str], columns: list[str]
+        dedupe_keys: list[str], columns: list[str]
     ) -> None:
         """Ensure all dedupe keys exist in schema."""
         missing_keys: set[str] = set(dedupe_keys) - set(columns)
@@ -340,4 +362,3 @@ class RealtimePipeline:
                 f"The following dedupe_key_columns are missing "
                 f"from schema: {missing_keys}"
             )
-        self.log.info("Initialised")
