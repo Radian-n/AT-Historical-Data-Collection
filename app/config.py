@@ -1,5 +1,6 @@
 """Configuration settings for the Auckland Transport data collection app."""
 
+from enum import StrEnum
 import os
 from pathlib import Path
 from typing import Final
@@ -13,22 +14,22 @@ POLL_INTERVAL_SECONDS: Final[float] = int(
     os.getenv("POLL_INTERVAL_SECONDS", "30")
 )
 
-# How many minutes to wait after the end of the hour before writing data.
-# AT API can include data for ~15 minutes.
-# Therefore, a response at 05:14:30 may still contain information from <5am.
-# TODO: Check if this can be lower now that we're doing incremental dedupes
-SAFE_DELAY_MINS: Final[float] = float(os.getenv("SAFE_DELAY_MINS", "16.0"))
+# Minute of the hour to run cleanup (dedupe + compact).
+# AT API can return data up to ~15 minutes old, so a response at 05:14:30
+# may still contain data from the 04:00 hour. Running at minute 20 provides
+# a buffer to ensure all late-arriving data has been ingested before cleanup.
+CLEANUP_MINUTE: Final[int] = 20
 
 # API
 AT_API_KEY: Final[str] = os.getenv("AT_API_KEY", "")
 if not AT_API_KEY:
     raise RuntimeError("AT_API_KEY not set")
 
-AT_API_HEADERS: Final[dict[str, str]] = {
-    "Ocp-Apim-Subscription-Key": AT_API_KEY,
-    "Accept": "application/x-protobuf",
-}
 
 # Storage
-DATA_ROOT: Final[Path] = Path("data")
-BUFFER_CHECKPOINT_ROOT: Final[Path] = Path("buffer_checkpoint")
+DATA_PATH: Final[Path] = Path("data")
+
+
+class Tables(StrEnum):
+    VEHICLE_POSITIONS = "vehicle_positions"
+    TRIP_UPDATES = "trip_updates"
