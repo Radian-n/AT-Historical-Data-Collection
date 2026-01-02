@@ -1,4 +1,4 @@
-"""Entity definition for vehicle positions data."""
+"""Entity definition for trip updates data."""
 
 import json
 from datetime import datetime, timezone
@@ -8,14 +8,15 @@ import pyarrow as pa
 import pyarrow.compute as pc
 from google.transit import gtfs_realtime_pb2
 
+from app.const import Columns
 from app.entities.base import BaseEntity
 
 
-class VehiclePositionEntity(BaseEntity):
+class TripUpdateEntity(BaseEntity):
     """Complete entity definition for vehicle positions."""
 
-    URL = "https://api.at.govt.nz/realtime/legacy/vehiclelocations"
-    TABLE_NAME = "vehicle_positions"
+    URL = "https://api.at.govt.nz/realtime/legacy/tripupdates"
+    TABLE_NAME = "trip_updates"
 
     _schema: dict[Columns, pa.DataType] = {
         # Timestamps
@@ -32,13 +33,16 @@ class VehiclePositionEntity(BaseEntity):
         Columns.SCHEDULE_RELATIONSHIP: pa.int32(),
         Columns.START_DATE: pa.string(),
         Columns.START_TIME: pa.string(),
-        Columns.LATITUDE: pa.float64(),
-        Columns.LONGITUDE: pa.float64(),
-        Columns.BEARING: pa.float32(),
-        Columns.SPEED: pa.float32(),
-        Columns.ODOMETER: pa.float64(),
-        Columns.OCCUPANCY_STATUS: pa.int32(),
-        Columns.ENTITY_IS_DELETED: pa.bool_(),
+        # Stop update data
+        Columns.STOP_SEQUENCE: pa.int32(),
+        Columns.STOP_ID: pa.string(),
+        Columns.STOP_SCHEDULE_RELATIONSHIP: pa.int32(),
+        Columns.ARRIVAL_DELAY: pa.int32(),
+        Columns.ARRIVAL_TIME: pa.timestamp("s", tz="+00:00"),
+        Columns.ARRIVAL_UNCERTAINTY: pa.int32(),
+        Columns.DEPARTURE_DELAY: pa.int32(),
+        Columns.DEPARTURE_TIME: pa.timestamp("s", tz="+00:00"),
+        Columns.DEPARTURE_UNCERTAINTY: pa.int32(),
     }
 
     @classmethod
@@ -57,32 +61,42 @@ class VehiclePositionEntity(BaseEntity):
         rows: list[dict[str, Any]] = []
 
         for entity in feed.entity:
-            if not entity.HasField("vehicle"):
+            if not entity.HasField("trip_update"):
                 continue
 
-            e = entity.vehicle
+            e = entity.trip_update
             row = {
+                # Timestamps
                 Columns.POLL_TIME: poll_time,
                 Columns.FEED_TIMESTAMP: datetime.fromtimestamp(
                     e.timestamp, tz=timezone.utc
                 ),
+                # Vehicle details
                 Columns.VEHICLE_ID: e.vehicle.id or None,
                 Columns.LABEL: e.vehicle.label or None,
                 Columns.LICENSE_PLATE: e.vehicle.license_plate or None,
+                # Trip/route info
                 Columns.TRIP_ID: e.trip.trip_id or None,
                 Columns.ROUTE_ID: e.trip.route_id or None,
                 Columns.DIRECTION_ID: e.trip.direction_id,
                 Columns.SCHEDULE_RELATIONSHIP: e.trip.schedule_relationship,
                 Columns.START_DATE: e.trip.start_date or None,
                 Columns.START_TIME: e.trip.start_time or None,
-                Columns.LATITUDE: e.position.latitude,
-                Columns.LONGITUDE: e.position.longitude,
-                Columns.BEARING: e.position.bearing,
-                Columns.SPEED: e.position.speed,
-                Columns.ODOMETER: e.position.odometer,
-                Columns.OCCUPANCY_STATUS: e.occupancy_status,
+                # Stop update data
+                Columns.STOP_SEQUENCE: e.stop_time_update.stop_sequence or None,
+                Columns.STOP_ID: e.stop_time_update.stop_id,
+                Columns.STOP_SCHEDULE_RELATIONSHIP:  e.stop_time_update.schedule_relationship,
+                Columns.ARRIVAL_DELAY: e.stop_time_update.arrival.delay,
+                Columns.ARRIVAL_TIME:  e.stop_time_update.arrival.time,
+                Columns.ARRIVAL_UNCERTAINTY:  e.stop_time_update.arrival.uncertainty,
+                Columns.DEPARTURE_DELAY: e.stop_time_update.departure.delay,
+                Columns.DEPARTURE_TIME: e.stop_time_update.departure.time,
+                Columns.DEPARTURE_UNCERTAINTY: e.stop_time_update.departure.uncertainty,
                 Columns.ENTITY_IS_DELETED: entity.is_deleted,
             }
+
+            # TODO: Handle case where trip has no 'stop_time_update attribute.
+
             rows.append(row)
 
         return rows
@@ -90,48 +104,30 @@ class VehiclePositionEntity(BaseEntity):
     @classmethod
     def dedupe_keys(cls) -> list[str]:
         """Return columns used to deduplicate vehicle position records."""
-        return [cls.VEHICLE_ID, cls.FEED_TIMESTAMP]
+        return [Columns.TRIP_ID, Columns.START_DATE, Columns.STOP_SEQUENCE, Columns.FEED_TIMESTAMP]
 
     @classmethod
     def partition_cols(cls) -> list[str]:
         """Return columns used to partition parquet files."""
-        return [cls.FEED_DATE, cls.FEED_HOUR, cls.ROUTE_ID]
+        return [Columns.FEED_DATE, Columns.FEED_HOUR, Columns.ROUTE_ID]
 
     @classmethod
     def add_derived_columns(cls, table: pa.Table) -> pa.Table:
         """Derive date and hour columns from feed timestamp."""
-        ts = table[cls.FEED_TIMESTAMP]
+        ts = table[Columns.FEED_TIMESTAMP]
         return (
             table
-            .append_column(cls.FEED_DATE, pc.strftime(ts, format="%Y-%m-%d"))
-            .append_column(cls.FEED_HOUR, pc.hour(ts))
+            .append_column(Columns.FEED_DATE, pc.strftime(ts, format="%Y-%m-%d"))
+            .append_column(Columns.FEED_HOUR, pc.hour(ts))
         )
 
     @classmethod
     def pa_schema(cls) -> pa.Schema:
         """Return the PyArrow schema for vehicle positions."""
         partition_cols_json = json.dumps(cls.partition_cols()).encode("utf-8")
+        fields = [pa.field(col, dtype) for col, dtype in cls._schema.items()]
         return pa.schema(
-            [
-                pa.field(cls.POLL_TIME, pa.timestamp("s", tz="+00:00")),
-                pa.field(cls.FEED_TIMESTAMP, pa.timestamp("s", tz="+00:00")),
-                pa.field(cls.VEHICLE_ID, pa.string()),
-                pa.field(cls.LABEL, pa.string()),
-                pa.field(cls.LICENSE_PLATE, pa.string()),
-                pa.field(cls.TRIP_ID, pa.string()),
-                pa.field(cls.ROUTE_ID, pa.string()),
-                pa.field(cls.DIRECTION_ID, pa.int32()),
-                pa.field(cls.SCHEDULE_RELATIONSHIP, pa.int32()),
-                pa.field(cls.START_DATE, pa.string()),
-                pa.field(cls.START_TIME, pa.string()),
-                pa.field(cls.LATITUDE, pa.float64()),
-                pa.field(cls.LONGITUDE, pa.float64()),
-                pa.field(cls.BEARING, pa.float32()),
-                pa.field(cls.SPEED, pa.float32()),
-                pa.field(cls.ODOMETER, pa.float64()),
-                pa.field(cls.OCCUPANCY_STATUS, pa.int32()),
-                pa.field(cls.ENTITY_IS_DELETED, pa.bool_()),
-            ],
+            fields,
             metadata={
                 b"entity": b"vehicle_positions",
                 b"version": b"1",

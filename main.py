@@ -2,12 +2,16 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app.config import POLL_INTERVAL_SECONDS
 from app.entities.vehicle_positions import VehiclePositionEntity
+from app.entities.trip_updates import TripUpdateEntity
 from app.logging_config import configure_logging
 from app.pipeline import RealtimePipeline
 
 
 def main() -> None:
     configure_logging()
+
+    trip_updates = RealtimePipeline(TripUpdateEntity)
+    trip_updates.run_once()
 
     vehicle_positions = RealtimePipeline(VehiclePositionEntity)
 
