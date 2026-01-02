@@ -1,9 +1,9 @@
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from app.config import POLL_INTERVAL_SECONDS
+from app.cleanup import cleanup_all
+from app.config import CLEANUP_MINUTE, POLL_INTERVAL_SECONDS
 from app.ingest import combined_ingest
 from app.logging_config import configure_logging
-
 
 def main() -> None:
     configure_logging()
@@ -14,6 +14,13 @@ def main() -> None:
         "interval",
         seconds=POLL_INTERVAL_SECONDS,
         misfire_grace_time=POLL_INTERVAL_SECONDS,
+    )
+
+    # Hourly cleanup (dedupe + compact previous hour)
+    scheduler.add_job(
+        cleanup_all,
+        "cron",
+        minute=CLEANUP_MINUTE,
     )
 
     try:

@@ -89,13 +89,23 @@ Delta Lake is a storage layer on top of Parquet that adds:
 
 ### Data Cleanup
 
-An hourly cleanup job (not yet implemented) will:
+An hourly cleanup job runs at minute 20 of each hour to process the previous
+hour's data. The 20-minute delay allows for late-arriving data (the AT API
+can return up to ~50% stale data that may belong to the previous hour).
 
-1. Deduplicate rows (the AT API returns ~50% stale data each poll)
-2. Compact small files into larger ones
-3. Optionally sync to S3 for durable archive
+The cleanup job:
 
-Until cleanup runs, expect temporary duplicates and many small files.
+1. **Deduplicates rows** - Rows with identical dedupe keys are consolidated,
+   keeping one row per unique key combination.
+2. **Compacts files** - The deduplicated data is written as a new parquet
+   file, replacing the many small files created during ingestion. The old
+   files are marked as unreferenced in Delta Lake's transaction log.
+3. **Vacuums** - Physically deletes the unreferenced files from disk. Without
+   this step, old files would accumulate indefinitely (Delta Lake retains
+   them by default to support time travel queries).
+
+Until cleanup runs for a given hour, expect temporary duplicates and many
+small files.
 
 ## Data Dictionary
 
@@ -224,11 +234,15 @@ entity types in a single response.
 
 ```
 app/
+├── cleanup.py          # Hourly deduplication and compaction
+├── columns.py          # Column definitions, schema builder, dedupe keys
 ├── config.py           # Configuration and environment variables
-├── logging_config.py   # Logging setup
-├── columns.py          # Column definitions and schema builder
 ├── ingest.py           # Feed fetcher, base class, entity classes
+├── logging_config.py   # Logging setup
 └── utils.py            # Utility functions
+tests/
+├── conftest.py         # Pytest fixtures and test utilities
+└── test_cleanup.py     # Cleanup module tests
 main.py                 # Entry point
 ```
 
@@ -244,6 +258,22 @@ MD5-based deduplication, and protobuf decoding.
 
 **Entity classes** (e.g., `VehiclePositions`, `TripUpdates`) implement
 entity-specific parsing logic and write to separate Delta Lake tables.
+
+## Testing
+
+```bash
+# Install test dependencies
+uv sync --extra test
+
+# Run all tests
+uv run pytest
+
+# Run only unit tests (fast, no external dependencies)
+uv run pytest -m unit
+
+# Run with coverage
+uv run pytest --cov=app
+```
 
 ## License
 

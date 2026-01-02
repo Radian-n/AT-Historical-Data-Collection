@@ -55,6 +55,23 @@ class Columns(StrEnum):
     FEED_HOUR = "feed_hour"
 
 
+# Dedupe keys for each entity type.
+# Used during hourly cleanup to identify duplicate records.
+# For each unique combination of these keys, we keep only the row with the
+# latest poll_time (most recent observation).
+VEHICLE_POSITIONS_DEDUPE_KEYS: tuple[Columns, ...] = (
+    Columns.VEHICLE_ID,
+    Columns.FEED_TIMESTAMP,
+)
+
+TRIP_UPDATES_DEDUPE_KEYS: tuple[Columns, ...] = (
+    Columns.TRIP_ID,
+    Columns.START_DATE,
+    Columns.STOP_SEQUENCE,
+    Columns.FEED_TIMESTAMP,
+)
+
+
 # PyArrow type for each column.
 FIELD_TYPES: dict[Columns, pa.DataType] = {
     # Timestamps
