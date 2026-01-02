@@ -28,6 +28,7 @@ class Columns(StrEnum):
     SCHEDULE_RELATIONSHIP = "schedule_relationship"
     START_DATE = "start_date"
     START_TIME = "start_time"
+    DELAY = "delay"
 
     # Position data (vehicle_positions only)
     LATITUDE = "latitude"
@@ -37,7 +38,7 @@ class Columns(StrEnum):
     ODOMETER = "odometer"
     OCCUPANCY_STATUS = "occupancy_status"
     ENTITY_IS_DELETED = "entity_is_deleted"
-
+    
     # Stop update data
     STOP_SEQUENCE = "stop_sequence"
     STOP_ID = "stop_id"
@@ -70,6 +71,7 @@ FIELD_TYPES: dict[Columns, pa.DataType] = {
     Columns.SCHEDULE_RELATIONSHIP: pa.int32(),
     Columns.START_DATE: pa.string(),
     Columns.START_TIME: pa.string(),
+    Columns.DELAY: pa.int32(),
     # Position data
     Columns.LATITUDE: pa.float64(),
     Columns.LONGITUDE: pa.float64(),

@@ -1,8 +1,14 @@
-"""Ingestion classes for GTFS-Realtime data."""
+"""Combined feed ingestion for GTFS-Realtime data.
+
+Uses Auckland Transport's Combined Feed API endpoint to fetch all
+realtime data in a single request, reducing API calls to stay within
+rate limits (~3.4 calls/minute).
+"""
 
 import hashlib
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
@@ -11,7 +17,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import requests
 from deltalake import write_deltalake
-from google.protobuf.message import DecodeError
 from google.transit import gtfs_realtime_pb2
 
 from app.columns import Columns, make_schema
@@ -19,37 +24,52 @@ from app.config import (
     AT_API_KEY,
     DATA_PATH,
 )
-from app.utils import byte_string_array
+from app.utils import list_to_json_bytes
 
 
-class Ingester(ABC):
-    """GTFS-Realtime ingestion base class.
+@dataclass
+class FetchResult:
+    """Successful fetch result.
 
-    A reusable pipeline that fetches, parses, and writes GTFS-Realtime
-    data. Subclasses define entity-specific configuration and logic.
-
-    Designed to be called by an external scheduler (e.g., APScheduler).
-    Call run() to execute a single fetch-parse-write cycle.
-
-    Required class attributes:
-        url: str - HTTP endpoint for the GTFS-Realtime feed
-        schema: pa.Schema - PyArrow schema for the entity
-        partition_cols: list[str] - Columns to partition by
-        write_path: Path - Output path for Delta Lake table
-
-    Required methods:
-        normalise(feed) -> list[dict]
-
-    Optional overrides:
-        headers: dict[str, str] - HTTP headers (defaults to AT API)
-        add_derived_columns(table) -> pa.Table
+    Attributes:
+        feed: Decoded protobuf feed.
+        poll_time: Timestamp when fetch was initiated.
     """
 
-    url: ClassVar[str]
-    schema: ClassVar[pa.Schema]
-    partition_cols: ClassVar[list[str]]
-    write_path: ClassVar[Path]
+    feed: gtfs_realtime_pb2.FeedMessage
+    poll_time: datetime
 
+
+@dataclass
+class IngestResult:
+    """Result of a combined ingest operation.
+
+    Attributes:
+        vehicle_positions_rows: Rows written for vehicle positions.
+        trip_updates_rows: Rows written for trip updates.
+    """
+
+    vehicle_positions_rows: int
+    trip_updates_rows: int
+
+    @property
+    def total_rows(self) -> int:
+        """Total rows written across all entity types."""
+        return self.vehicle_positions_rows + self.trip_updates_rows
+
+
+class CombinedFeedFetcher:
+    """Fetches the combined GTFS-Realtime feed from Auckland Transport.
+
+    Handles HTTP requests, MD5-based deduplication, and protobuf decoding.
+    Designed to be called by an external scheduler (e.g., APScheduler).
+
+    The combined feed endpoint returns all entity types (vehicle positions,
+    trip updates, alerts) in a single response, allowing multiple Ingest
+    subclasses to process the same feed without additional API calls.
+    """
+
+    url: ClassVar[str] = "https://api.at.govt.nz/realtime/legacy/"
     headers: ClassVar[dict[str, str]] = {
         "Ocp-Apim-Subscription-Key": AT_API_KEY,
         "Accept": "application/x-protobuf",
@@ -57,29 +77,23 @@ class Ingester(ABC):
 
     def __init__(self) -> None:
         self.log = logging.getLogger(f"{self.__class__.__name__}")
-        self.poll_time: datetime | None = None
-
-        # Runtime state
         self._last_md5: str | None = None
 
-    def run(self) -> int | None:
-        """Execute a single fetch-parse-write cycle.
-
-        Designed to be called by an external scheduler.
+    def fetch(self) -> FetchResult | None:
+        """Fetch and decode the combined GTFS-Realtime feed.
 
         Returns:
-            int: Number of rows written (0 if skipped due to unchanged
-                feed)
-            None: On error
-        """
-        self.poll_time = datetime.now(timezone.utc)
+            FetchResult: On successful fetch with new data.
+            None: If feed unchanged (MD5 match).
 
-        try:
-            resp = requests.get(url=self.url, headers=self.headers)
-            resp.raise_for_status()
-        except requests.RequestException:
-            self.log.exception("HTTP fetch failed")
-            return None
+        Raises:
+            requests.RequestException: On HTTP errors.
+            DecodeError: On protobuf parsing errors.
+        """
+        poll_time = datetime.now(timezone.utc)
+
+        resp = requests.get(url=self.url, headers=self.headers)
+        resp.raise_for_status()
 
         raw_bytes = resp.content
 
@@ -87,17 +101,51 @@ class Ingester(ABC):
         md5 = hashlib.md5(raw_bytes, usedforsecurity=False).hexdigest()
         if md5 == self._last_md5:
             self.log.info("Feed unchanged (MD5 match); skipping")
-            return 0
+            return None
 
         self._last_md5 = md5
 
-        try:
-            feed = self.decode_feed(raw_bytes)
-            self.log.info("%d protobuf entities decoded", len(feed.entity))
-        except DecodeError:
-            self.log.exception("Failed to parse protobuf message")
-            return None
+        feed = self.decode_feed(raw_bytes)
+        self.log.info("%d protobuf entities decoded", len(feed.entity))
 
+        return FetchResult(feed=feed, poll_time=poll_time)
+
+    def decode_feed(self, raw_bytes: bytes) -> gtfs_realtime_pb2.FeedMessage:
+        """Decode raw GTFS-Realtime protobuf bytes into a FeedMessage."""
+        feed = gtfs_realtime_pb2.FeedMessage()
+        feed.ParseFromString(raw_bytes)
+        return feed
+
+
+class Ingest(ABC):
+    """Base class for processing and writing GTFS-Realtime entities.
+
+    Subclasses define entity-specific configuration (schema, partition
+    columns, write path) and normalisation logic.
+
+    Required class attributes:
+        schema: pa.Schema - PyArrow schema for the entity
+        partition_cols: list[Columns] - Columns to partition by
+        write_path: Path - Output path for Delta Lake table
+
+    Required methods:
+        normalise(feed) -> list[dict]
+    """
+
+    partition_cols: ClassVar[list[Columns]]
+    schema: ClassVar[pa.Schema]
+    write_path: ClassVar[Path]
+
+    def __init__(self) -> None:
+        self.log = logging.getLogger(f"{self.__class__.__name__}")
+        self.poll_time: datetime | None = None
+
+    def ingest(
+        self,
+        feed: gtfs_realtime_pb2.FeedMessage,
+        poll_time: datetime,
+    ) -> int | None:
+        self.poll_time = poll_time
         try:
             rows = self.normalise(feed)
             self.log.info("%d rows normalised", len(rows))
@@ -113,12 +161,6 @@ class Ingester(ABC):
         self.write_data(table, self.partition_cols, path=self.write_path)
         self.log.info("%d rows written to Delta Lake", len(table))
         return len(rows)
-
-    def decode_feed(self, raw_bytes: bytes) -> gtfs_realtime_pb2.FeedMessage:
-        """Decode raw GTFS-Realtime protobuf bytes into a FeedMessage."""
-        feed = gtfs_realtime_pb2.FeedMessage()
-        feed.ParseFromString(raw_bytes)
-        return feed
 
     def add_derived_columns(self, table: pa.Table) -> pa.Table:
         """Derive date and hour columns from feed timestamp."""
@@ -140,20 +182,18 @@ class Ingester(ABC):
 
     @abstractmethod
     def normalise(
-        self, feed: gtfs_realtime_pb2.FeedMessage
-    ) -> list[dict[str, Any]]:
-        """Parse entities from protobuf feed into row dictionaries."""
-        ...
+        self,
+        feed: gtfs_realtime_pb2.FeedMessage,
+    ) -> list[dict[str, Any]]: ...
 
 
-class VehiclePositions(Ingester):
+class VehiclePositions(Ingest):
     """Ingester for GTFS-Realtime vehicle position data.
 
     Captures real-time vehicle locations including coordinates, bearing,
     speed, and trip information from the Auckland Transport API.
     """
 
-    url = "https://api.at.govt.nz/realtime/legacy/vehiclelocations"
     partition_cols = [Columns.FEED_DATE, Columns.FEED_HOUR, Columns.ROUTE_ID]
     schema = make_schema(
         [
@@ -183,7 +223,7 @@ class VehiclePositions(Ingester):
         metadata={
             b"entity": b"vehicle_positions",
             b"version": b"1",
-            b"partition_columns": byte_string_array(partition_cols),
+            b"partition_columns": list_to_json_bytes(partition_cols),
         },
     )
     write_path = DATA_PATH / "vehicle_positions"
@@ -231,14 +271,13 @@ class VehiclePositions(Ingester):
         return rows
 
 
-class TripUpdates(Ingester):
+class TripUpdates(Ingest):
     """Ingester for GTFS-Realtime trip updates data.
 
     Captures real-time trip updates including stops, arrival and
     departure times and delays data from the Auckland Transport API.
     """
 
-    url = "https://api.at.govt.nz/realtime/legacy/tripupdates"
     partition_cols = [Columns.FEED_DATE, Columns.FEED_HOUR, Columns.ROUTE_ID]
     schema = make_schema(
         [
@@ -267,11 +306,12 @@ class TripUpdates(Ingester):
             Columns.DEPARTURE_DELAY,
             Columns.DEPARTURE_TIME,
             Columns.DEPARTURE_UNCERTAINTY,
+            Columns.ENTITY_IS_DELETED,
         ],
         metadata={
             b"entity": b"trip_updates",
             b"version": b"1",
-            b"partition_columns": byte_string_array(partition_cols),
+            b"partition_columns": list_to_json_bytes(partition_cols),
         },
     )
     write_path = DATA_PATH / "trip_updates"
@@ -315,14 +355,16 @@ class TripUpdates(Ingester):
             }
 
             if e.stop_time_update:
-                # Only record the stop time if it was close to the feed timestamp
                 for stu in e.stop_time_update:
+                    # Only record the stop time if it was close to the feed timestamp
                     is_current = (
+                        # Recent arrival
                         stu.arrival.time > 0  # has arrival time
-                        and abs(e.timestamp - stu.arrival.time) <= 30 # Recent arrival
+                        and abs(e.timestamp - stu.arrival.time) <= 30
                     ) or (
-                        stu.departure.time > 0 # has departure time
-                        and abs(e.timestamp - stu.departure.time) <= 30 # Recent departure
+                        # Recent departure
+                        stu.departure.time > 0  # has departure time
+                        and abs(e.timestamp - stu.departure.time) <= 30
                     )
 
                     if is_current:
@@ -360,3 +402,41 @@ class TripUpdates(Ingester):
                 rows.append(row)
 
         return rows
+
+
+combined_feed = CombinedFeedFetcher()
+vehicle_positions = VehiclePositions()
+trip_updates = TripUpdates()
+
+
+log = logging.getLogger(__name__)
+
+
+def combined_ingest() -> IngestResult | None:
+    """Fetch combined feed and ingest all entity types.
+
+    Exceptions propagate to the caller (APScheduler handles them and
+    continues to the next tick). Add explicit exception handling when
+    Sentry is integrated.
+
+    Returns:
+        IngestResult: Row counts on success.
+        None: If feed unchanged (skipped).
+    """
+    result = combined_feed.fetch()
+
+    if result is None:
+        log.debug("Feed unchanged; skipping ingest")
+        return None
+
+    vp_rows = vehicle_positions.ingest(result.feed, result.poll_time) or 0
+    tu_rows = trip_updates.ingest(result.feed, result.poll_time) or 0
+
+    return IngestResult(
+        vehicle_positions_rows=vp_rows,
+        trip_updates_rows=tu_rows,
+    )
+
+
+if __name__ == "__main__":
+    combined_ingest()
