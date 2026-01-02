@@ -217,8 +217,3 @@ __marimo__/
 
 # Project specific
 data/
-buffer_checkpoint/
-
-# Claude
-.claude
-CLAUDE.MD
