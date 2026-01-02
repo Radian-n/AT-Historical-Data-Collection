@@ -390,9 +390,7 @@ class TripUpdates(Ingest):
                             Columns.ARRIVAL_UNCERTAINTY: stu.arrival.uncertainty,
                             Columns.DEPARTURE_DELAY: stu.departure.delay,
                             Columns.DEPARTURE_TIME: stu.departure.time or None,
-                            Columns.DEPARTURE_UNCERTAINTY: (
-                                stu.departure.uncertainty
-                            ),
+                            Columns.DEPARTURE_UNCERTAINTY: stu.departure.uncertainty,
                         }
                         rows.append(row)
             else:

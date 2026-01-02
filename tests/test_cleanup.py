@@ -332,8 +332,7 @@ class TestCleanupEdgeCases:
 
         # Verify hour 10 specifically has 2 rows
         hour_10_count = duckdb.sql(
-            f"SELECT COUNT(*) FROM delta_scan('{table_path}') "
-            f"WHERE feed_hour = 10"
+            f"SELECT COUNT(*) FROM delta_scan('{table_path}') WHERE feed_hour = 10"
         ).fetchone()[0]
         assert hour_10_count == 2
 
@@ -470,8 +469,12 @@ class TestCleanupEdgeCases:
             assert count == 1
 
         # Verify partition directories still exist for all 5 routes
-        hour_partition: Path = table_path / "feed_date=2026-01-02" / "feed_hour=10"
-        route_partitions: list[Path] = [d for d in hour_partition.iterdir() if d.is_dir()]
+        hour_partition: Path = (
+            table_path / "feed_date=2026-01-02" / "feed_hour=10"
+        )
+        route_partitions: list[Path] = [
+            d for d in hour_partition.iterdir() if d.is_dir()
+        ]
         route_names: set[str] = {d.name for d in route_partitions}
         expected_routes: set[str] = {f"route_id=route_{i}" for i in range(5)}
         assert route_names == expected_routes

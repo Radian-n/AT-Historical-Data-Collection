@@ -259,6 +259,13 @@ MD5-based deduplication, and protobuf decoding.
 **Entity classes** (e.g., `VehiclePositions`, `TripUpdates`) implement
 entity-specific parsing logic and write to separate Delta Lake tables.
 
+## Development
+
+```bash
+# Install pre-commit hooks (runs ruff on commit)
+uv run pre-commit install
+```
+
 ## Testing
 
 ```bash
