@@ -1,22 +1,25 @@
 # AT Historical Data Collection
 
-Collects real-time GTFS data from the Auckland Transport API and stores it as partitioned Parquet files for historical analysis.
+Collects real-time GTFS data from the Auckland Transport API and stores it
+in Delta Lake tables for historical analysis.
 
 ## Features
 
-- Polls AT's GTFS-Realtime API for vehicle positions
-- Deduplicates records within each collection window
-- Writes hourly partitioned Parquet files
-- Checkpoints buffer state for crash recovery
+- Collects vehicle positions, trip updates, ferry positions, and service
+  alerts from AT's GTFS-Realtime API
+- Writes to Delta Lake with date/hour/route partitioning
 - Uses APScheduler for job scheduling
+- MD5-based feed deduplication (skips unchanged responses)
 
-## Requirements
+## Getting Started
+
+### Requirements
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - Auckland Transport API key ([register here](https://dev-portal.at.govt.nz/))
 
-## Installation
+### Installation
 
 ```bash
 uv sync
@@ -28,7 +31,7 @@ Or with pip:
 pip install -e .
 ```
 
-## Configuration
+### Configuration
 
 Create a `.env` file in the project root:
 
@@ -40,101 +43,237 @@ Optional settings:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATA_ROOT` | `data` | Root directory for parquet output |
-| `BUFFER_CHECKPOINT_ROOT` | `buffer_checkpoint` | Root directory for buffer checkpoint files |
-
-Pipeline timing constants (in `app/config.py`):
-
-| Constant | Default | Description |
-|----------|---------|-------------|
 | `POLL_INTERVAL_SECONDS` | `30` | Seconds between API requests |
-| `MAX_DATA_AGE_MINS` | `15.0` | Maximum age (minutes) of data to accept into buffer |
-| `FLUSH_BUFFER_MINS` | `5.0` | Additional minutes to wait after max age before flushing |
+| `DATA_PATH` | `data` | Directory for Delta Lake tables |
 
-## Usage
+### Usage
 
 ```bash
 uv run python main.py
 ```
 
-The application runs continuously, polling the API on a schedule and writing hourly Parquet files to `data/`.
+The application runs continuously, polling the API on a schedule and writing
+to Delta Lake tables. Every hour, a clean up task will de-duplicate and compact
+the Delta Lake tables for final storage.
 
-## Testing
+## Data Storage
 
-Install test dependencies:
+### Output Structure
 
-```bash
-uv sync --extra test
-```
-
-Run tests:
-
-```bash
-uv run pytest              # Run all tests (verbose by default)
-uv run pytest -m unit      # Run unit tests only
-uv run pytest --cov=app    # Run with coverage report
-```
-
-### Test Structure
+Data is stored as Delta Lake tables with Hive-style partitioning. The
+storage location is configured via the `DATA_PATH` environment variable
+(defaults to `data/`).
 
 ```
-tests/
-├── conftest.py              # Shared fixtures and pytest_configure hook
-├── test_buffer.py           # Buffer management and hour grouping
-├── test_config.py           # Environment variable validation
-├── test_dedupe.py           # Deduplication logic
-├── test_entity_normalise.py # Protobuf parsing
-└── test_entity_schema.py    # Schema validation and derived columns
+$DATA_PATH/
+├── vehicle_positions/
+│   ├── _delta_log/
+│   └── feed_date=2025-01-15/
+│       └── feed_hour=14/
+│           └── route_id=123/
+│               └── *.parquet
+└── trip_updates/
+    ├── _delta_log/
+    └── ...
 ```
 
-### Test Configuration
+### Why Delta Lake?
 
-- **pytest config**: Defined in `pyproject.toml` (test paths, markers, default options)
-- **Environment**: `AT_API_KEY` is set automatically by `pytest_configure` hook
-- **Markers**: Tests are marked with `@pytest.mark.unit` or `@pytest.mark.integration`
+Delta Lake is a storage layer on top of Parquet that adds:
 
-## Output Structure
+- **ACID transactions** - atomic writes, no partial failures or corruption
+- **Immediate durability** - data is safe on disk within seconds of ingestion
+- **Built-in compaction** - consolidate small files via `OPTIMIZE`
+- **Schema enforcement** - prevents accidental schema drift
+- **Time travel** - query historical versions if needed
 
+### Data Cleanup
+
+An hourly cleanup job runs at minute 20 of each hour to process the previous
+hour's data. The 20-minute delay allows for late-arriving data (the AT API
+can return up to ~50% stale data that may belong to the previous hour).
+
+The cleanup job:
+
+1. **Deduplicates rows** - Rows with identical dedupe keys are consolidated,
+   keeping one row per unique key combination.
+2. **Compacts files** - The deduplicated data is written as a new parquet
+   file, replacing the many small files created during ingestion. The old
+   files are marked as unreferenced in Delta Lake's transaction log.
+3. **Vacuums** - Physically deletes the unreferenced files from disk. Without
+   this step, old files would accumulate indefinitely (Delta Lake retains
+   them by default to support time travel queries).
+
+Until cleanup runs for a given hour, expect temporary duplicates and many
+small files.
+
+## Data Dictionary
+
+### vehicle_positions
+
+One row per vehicle position update.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `poll_time` | timestamp(s, UTC) | When the API was polled |
+| `feed_timestamp` | timestamp(s, UTC) | Timestamp from the vehicle position |
+| `vehicle_id` | string | Unique vehicle identifier |
+| `label` | string | Vehicle label (e.g., fleet number) |
+| `license_plate` | string | Vehicle license plate |
+| `trip_id` | string | GTFS trip identifier |
+| `route_id` | string | GTFS route identifier |
+| `direction_id` | int32 | Direction of travel (0 or 1) |
+| `schedule_relationship` | int32 | Trip schedule status |
+| `start_date` | string | Trip start date (YYYYMMDD) |
+| `start_time` | string | Trip start time (HH:MM:SS) |
+| `latitude` | float64 | Vehicle latitude |
+| `longitude` | float64 | Vehicle longitude |
+| `bearing` | float32 | Vehicle heading (degrees) |
+| `speed` | float32 | Vehicle speed (m/s) |
+| `odometer` | float64 | Odometer reading (metres) |
+| `occupancy_status` | int32 | Vehicle occupancy level |
+| `entity_is_deleted` | bool | Whether entity was marked deleted |
+| `feed_date` | string | Derived: date for partitioning |
+| `feed_hour` | int32 | Derived: hour for partitioning |
+
+**Dedupe key:** `(vehicle_id, feed_timestamp)`
+
+**Partitioned by:** `(feed_date, feed_hour, route_id)`
+
+### trip_updates
+
+One row per stop time update. Denormalized with trip and vehicle info.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `poll_time` | timestamp(s, UTC) | When the API was polled |
+| `feed_timestamp` | timestamp(s, UTC) | Timestamp from the trip update |
+| `vehicle_id` | string | Vehicle identifier |
+| `label` | string | Vehicle label |
+| `license_plate` | string | Vehicle license plate |
+| `trip_id` | string | GTFS trip identifier |
+| `route_id` | string | GTFS route identifier |
+| `direction_id` | int32 | Direction of travel (0 or 1) |
+| `schedule_relationship` | int32 | Trip schedule status |
+| `start_date` | string | Trip start date (YYYYMMDD) |
+| `start_time` | string | Trip start time (HH:MM:SS) |
+| `delay` | int32 | Trip-level delay in seconds |
+| `stop_sequence` | int32 | Order of stop in trip |
+| `stop_id` | string | GTFS stop identifier |
+| `stop_schedule_relationship` | int32 | Stop status (SCHEDULED, SKIPPED, etc.) |
+| `arrival_delay` | int32 | Arrival delay in seconds (negative = early) |
+| `arrival_time` | int64 | Predicted/actual arrival time (Unix timestamp) |
+| `arrival_uncertainty` | int32 | Arrival prediction uncertainty |
+| `departure_delay` | int32 | Departure delay in seconds |
+| `departure_time` | int64 | Predicted/actual departure time (Unix timestamp) |
+| `departure_uncertainty` | int32 | Departure prediction uncertainty |
+| `entity_is_deleted` | bool | Whether entity was marked deleted |
+| `feed_date` | string | Derived: date for partitioning |
+| `feed_hour` | int32 | Derived: hour for partitioning |
+
+**Dedupe key:** `(trip_id, start_date, stop_sequence, feed_timestamp)`
+
+**Partitioned by:** `(feed_date, feed_hour, route_id)`
+
+## Reading the Data
+
+Delta Lake stores data as standard Parquet files, so you can read them
+directly with any Parquet-compatible tool.
+
+### DuckDB
+
+```python
+import duckdb
+
+# Use glob patterns to target specific partitions, reducing I/O.
+# Select only the columns you need for faster reads.
+duckdb.sql("""
+    SELECT vehicle_id, latitude, longitude
+    FROM read_parquet('data/vehicle_positions/feed_date=2025-01-15/**/*.parquet')
+""")
 ```
-data/
-└── vehicle_positions/
-    └── feed_date=2025-01-15/
-        └── feed_hour=14/
-            └── route_id=123/
-                └── *.parquet
+
+### Polars
+
+```python
+import polars as pl
+
+# scan_parquet is lazy - filters and column selection are pushed down,
+# so only matching partitions and requested columns are read from disk.
+df = (
+    pl.scan_parquet("data/vehicle_positions/**/route_id=101/*.parquet")
+    .select(["vehicle_id", "latitude", "longitude", "feed_timestamp"])
+    .filter(pl.col("feed_hour") == 14)
+    .collect()
+)
 ```
 
-## Project Structure
+### pandas
+
+```python
+import pandas as pd
+
+# Read a specific partition with selected columns.
+df = pd.read_parquet(
+    "data/vehicle_positions/feed_date=2025-01-15/feed_hour=14",
+    columns=["vehicle_id", "latitude", "longitude"],
+)
+```
+
+## Technical Reference
+
+### API Rate Limits
+
+Auckland Transport's API has a rate limit of approximately 3.4 requests per
+minute. To stay within this limit while collecting multiple entity types
+(vehicle positions, trip updates, ferry positions, service alerts) every 30s,
+we use the **combined feed endpoint** (`/realtime/legacy/`) which returns all
+entity types in a single response.
+
+### Project Structure
 
 ```
 app/
+├── cleanup.py          # Hourly deduplication and compaction
+├── columns.py          # Column definitions, schema builder, dedupe keys
 ├── config.py           # Configuration and environment variables
+├── ingest.py           # Feed fetcher, base class, entity classes
 ├── logging_config.py   # Logging setup
-├── pipeline.py         # RealtimePipeline class
-└── entities/           # Entity definitions
-    ├── base.py         # BaseEntity abstract class
-    └── vehicle_positions.py  # VehiclePositionEntity
-tests/                  # Test suite
+└── utils.py            # Utility functions
+tests/
+├── conftest.py         # Pytest fixtures and test utilities
+└── test_cleanup.py     # Cleanup module tests
 main.py                 # Entry point
 ```
 
 ### Architecture
 
-**Entities** define the complete specification for a GTFS data type:
-- Feed URL and table name
-- Column definitions
-- Protobuf parsing logic (`normalise`)
-- Derived columns (`add_derived_columns`)
-- Partitioning and deduplication keys
+**CombinedFeedFetcher** handles HTTP requests to the combined feed endpoint,
+MD5-based deduplication, and protobuf decoding.
+
+**Ingest** is the base class for entity processors. Each subclass defines:
 - PyArrow schema
+- Partition columns
+- `normalise()` method to parse protobuf entities into rows
 
-**RealtimePipeline** is a generic, reusable pipeline that:
-- Fetches data from the entity's URL
-- Parses using the entity's `normalise` method
-- Buffers and deduplicates data
-- Writes partitioned Parquet files
+**Entity classes** (e.g., `VehiclePositions`, `TripUpdates`) implement
+entity-specific parsing logic and write to separate Delta Lake tables.
 
-To add a new entity type (e.g., trip updates), create a new entity class and add it to the scheduler in `main.py`.
+## Testing
+
+```bash
+# Install test dependencies
+uv sync --extra test
+
+# Run all tests
+uv run pytest
+
+# Run only unit tests (fast, no external dependencies)
+uv run pytest -m unit
+
+# Run with coverage
+uv run pytest --cov=app
+```
 
 ## License
 

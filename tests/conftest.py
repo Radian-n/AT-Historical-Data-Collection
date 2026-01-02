@@ -1,144 +1,186 @@
-"""Shared fixtures for tests."""
+"""Pytest configuration and fixtures for testing."""
 
 import os
 from datetime import datetime, timezone
-from typing import Any
 
+import pyarrow as pa
 import pytest
-from google.transit import gtfs_realtime_pb2
+from deltalake import write_deltalake
+
+from app.columns import (
+    Columns,
+    make_schema,
+    VEHICLE_POSITIONS_DEDUPE_KEYS,
+    TRIP_UPDATES_DEDUPE_KEYS,
+)
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Set up test environment before collection.
+    """Set required environment variables for tests."""
+    os.environ.setdefault("AT_API_KEY", "test-api-key")
 
-    This runs before any tests are collected, ensuring environment
-    variables are set before app.config is imported.
+
+# Minimal schema for vehicle positions tests
+VEHICLE_POSITIONS_TEST_SCHEMA = make_schema([
+    Columns.POLL_TIME,
+    Columns.FEED_TIMESTAMP,
+    Columns.VEHICLE_ID,
+    Columns.ROUTE_ID,
+    Columns.LATITUDE,
+    Columns.LONGITUDE,
+    Columns.FEED_DATE,
+    Columns.FEED_HOUR,
+])
+
+# Minimal schema for trip updates tests
+TRIP_UPDATES_TEST_SCHEMA = make_schema([
+    Columns.POLL_TIME,
+    Columns.FEED_TIMESTAMP,
+    Columns.TRIP_ID,
+    Columns.START_DATE,
+    Columns.STOP_SEQUENCE,
+    Columns.ROUTE_ID,
+    Columns.FEED_DATE,
+    Columns.FEED_HOUR,
+])
+
+
+@pytest.fixture
+def sample_vehicle_positions_data() -> list[dict]:
+    """Sample vehicle positions data with duplicates.
+
+    Contains 4 rows with 2 unique (vehicle_id, feed_timestamp) combinations.
+    After deduplication, should result in 2 rows.
     """
-    os.environ.setdefault("AT_API_KEY", "test_api_key")
+    base_ts = datetime(2026, 1, 2, 10, 30, 0, tzinfo=timezone.utc)
+    feed_ts = datetime(2026, 1, 2, 10, 25, 0, tzinfo=timezone.utc)
 
-
-# Import after pytest_configure sets environment
-from app.const import Columns  # noqa: E402
-from app.entities.vehicle_positions import VehiclePositionEntity  # noqa: E402
-
-
-@pytest.fixture
-def vehicle_entity() -> type[VehiclePositionEntity]:
-    """Return the VehiclePositionEntity class."""
-    return VehiclePositionEntity
-
-
-@pytest.fixture
-def sample_poll_time() -> datetime:
-    """Return a sample poll time for testing."""
-    return datetime(2024, 12, 15, 10, 30, 45, tzinfo=timezone.utc)
-
-
-@pytest.fixture
-def sample_feed_timestamp() -> int:
-    """Return a sample feed timestamp (unix seconds) for testing."""
-    # 2024-12-15 10:30:00 UTC
-    return 1734258600
-
-
-@pytest.fixture
-def sample_feed_message(sample_feed_timestamp: int) -> gtfs_realtime_pb2.FeedMessage:
-    """Create a FeedMessage with sample vehicle position entities."""
-    feed = gtfs_realtime_pb2.FeedMessage()
-
-    # Set header
-    feed.header.gtfs_realtime_version = "2.0"
-    feed.header.timestamp = sample_feed_timestamp
-
-    # Add first vehicle entity
-    entity1 = feed.entity.add()
-    entity1.id = "entity_1"
-    entity1.is_deleted = False
-    entity1.vehicle.vehicle.id = "vehicle_001"
-    entity1.vehicle.vehicle.label = "Bus 101"
-    entity1.vehicle.vehicle.license_plate = "ABC123"
-    entity1.vehicle.trip.trip_id = "trip_100"
-    entity1.vehicle.trip.route_id = "route_50"
-    entity1.vehicle.trip.direction_id = 0
-    entity1.vehicle.trip.schedule_relationship = 0
-    entity1.vehicle.trip.start_date = "20241215"
-    entity1.vehicle.trip.start_time = "10:00:00"
-    entity1.vehicle.position.latitude = -36.8485
-    entity1.vehicle.position.longitude = 174.7633
-    entity1.vehicle.position.bearing = 90.0
-    entity1.vehicle.position.speed = 12.5
-    entity1.vehicle.position.odometer = 50000.0
-    entity1.vehicle.timestamp = sample_feed_timestamp
-    entity1.vehicle.occupancy_status = 1
-
-    # Add second vehicle entity
-    entity2 = feed.entity.add()
-    entity2.id = "entity_2"
-    entity2.is_deleted = False
-    entity2.vehicle.vehicle.id = "vehicle_002"
-    entity2.vehicle.vehicle.label = "Bus 202"
-    entity2.vehicle.vehicle.license_plate = "XYZ789"
-    entity2.vehicle.trip.trip_id = "trip_200"
-    entity2.vehicle.trip.route_id = "route_75"
-    entity2.vehicle.trip.direction_id = 1
-    entity2.vehicle.trip.schedule_relationship = 0
-    entity2.vehicle.trip.start_date = "20241215"
-    entity2.vehicle.trip.start_time = "10:15:00"
-    entity2.vehicle.position.latitude = -36.8600
-    entity2.vehicle.position.longitude = 174.7700
-    entity2.vehicle.position.bearing = 180.0
-    entity2.vehicle.position.speed = 0.0  # Stopped
-    entity2.vehicle.position.odometer = 75000.0
-    entity2.vehicle.timestamp = sample_feed_timestamp + 30
-    entity2.vehicle.occupancy_status = 2
-
-    return feed
+    return [
+        # First observation of vehicle A
+        {
+            Columns.POLL_TIME: base_ts,
+            Columns.FEED_TIMESTAMP: feed_ts,
+            Columns.VEHICLE_ID: "vehicle_A",
+            Columns.ROUTE_ID: "route_1",
+            Columns.LATITUDE: -36.8485,
+            Columns.LONGITUDE: 174.7633,
+            Columns.FEED_DATE: "2026-01-02",
+            Columns.FEED_HOUR: 10,
+        },
+        # Duplicate of vehicle A (same vehicle_id + feed_timestamp)
+        {
+            Columns.POLL_TIME: datetime(2026, 1, 2, 10, 30, 30, tzinfo=timezone.utc),
+            Columns.FEED_TIMESTAMP: feed_ts,
+            Columns.VEHICLE_ID: "vehicle_A",
+            Columns.ROUTE_ID: "route_1",
+            Columns.LATITUDE: -36.8485,
+            Columns.LONGITUDE: 174.7633,
+            Columns.FEED_DATE: "2026-01-02",
+            Columns.FEED_HOUR: 10,
+        },
+        # First observation of vehicle B
+        {
+            Columns.POLL_TIME: base_ts,
+            Columns.FEED_TIMESTAMP: feed_ts,
+            Columns.VEHICLE_ID: "vehicle_B",
+            Columns.ROUTE_ID: "route_2",
+            Columns.LATITUDE: -36.8500,
+            Columns.LONGITUDE: 174.7650,
+            Columns.FEED_DATE: "2026-01-02",
+            Columns.FEED_HOUR: 10,
+        },
+        # Duplicate of vehicle B
+        {
+            Columns.POLL_TIME: datetime(2026, 1, 2, 10, 30, 30, tzinfo=timezone.utc),
+            Columns.FEED_TIMESTAMP: feed_ts,
+            Columns.VEHICLE_ID: "vehicle_B",
+            Columns.ROUTE_ID: "route_2",
+            Columns.LATITUDE: -36.8500,
+            Columns.LONGITUDE: 174.7650,
+            Columns.FEED_DATE: "2026-01-02",
+            Columns.FEED_HOUR: 10,
+        },
+    ]
 
 
 @pytest.fixture
-def sample_row(sample_poll_time: datetime) -> dict[str, Any]:
-    """Return a single normalized row dict."""
-    return {
-        Columns.POLL_TIME: sample_poll_time,
-        Columns.FEED_TIMESTAMP: datetime(
-            2024, 12, 15, 10, 30, 0, tzinfo=timezone.utc
-        ),
-        Columns.VEHICLE_ID: "vehicle_001",
-        Columns.LABEL: "Bus 101",
-        Columns.LICENSE_PLATE: "ABC123",
-        Columns.TRIP_ID: "trip_100",
-        Columns.ROUTE_ID: "route_50",
-        Columns.DIRECTION_ID: 0,
-        Columns.SCHEDULE_RELATIONSHIP: 0,
-        Columns.START_DATE: "20241215",
-        Columns.START_TIME: "10:00:00",
-        Columns.LATITUDE: -36.8485,
-        Columns.LONGITUDE: 174.7633,
-        Columns.BEARING: 90.0,
-        Columns.SPEED: 12.5,
-        Columns.ODOMETER: 50000.0,
-        Columns.OCCUPANCY_STATUS: 1,
-        Columns.ENTITY_IS_DELETED: False,
-    }
+def sample_trip_updates_data() -> list[dict]:
+    """Sample trip updates data with duplicates.
+
+    Contains 4 rows with 2 unique key combinations.
+    After deduplication, should result in 2 rows.
+    """
+    base_ts = datetime(2026, 1, 2, 10, 30, 0, tzinfo=timezone.utc)
+    feed_ts = datetime(2026, 1, 2, 10, 25, 0, tzinfo=timezone.utc)
+
+    return [
+        # First observation of trip A, stop 1
+        {
+            Columns.POLL_TIME: base_ts,
+            Columns.FEED_TIMESTAMP: feed_ts,
+            Columns.TRIP_ID: "trip_A",
+            Columns.START_DATE: "20260102",
+            Columns.STOP_SEQUENCE: 1,
+            Columns.ROUTE_ID: "route_1",
+            Columns.FEED_DATE: "2026-01-02",
+            Columns.FEED_HOUR: 10,
+        },
+        # Duplicate of trip A, stop 1
+        {
+            Columns.POLL_TIME: datetime(2026, 1, 2, 10, 30, 30, tzinfo=timezone.utc),
+            Columns.FEED_TIMESTAMP: feed_ts,
+            Columns.TRIP_ID: "trip_A",
+            Columns.START_DATE: "20260102",
+            Columns.STOP_SEQUENCE: 1,
+            Columns.ROUTE_ID: "route_1",
+            Columns.FEED_DATE: "2026-01-02",
+            Columns.FEED_HOUR: 10,
+        },
+        # First observation of trip A, stop 2
+        {
+            Columns.POLL_TIME: base_ts,
+            Columns.FEED_TIMESTAMP: feed_ts,
+            Columns.TRIP_ID: "trip_A",
+            Columns.START_DATE: "20260102",
+            Columns.STOP_SEQUENCE: 2,
+            Columns.ROUTE_ID: "route_1",
+            Columns.FEED_DATE: "2026-01-02",
+            Columns.FEED_HOUR: 10,
+        },
+        # Duplicate of trip A, stop 2
+        {
+            Columns.POLL_TIME: datetime(2026, 1, 2, 10, 30, 30, tzinfo=timezone.utc),
+            Columns.FEED_TIMESTAMP: feed_ts,
+            Columns.TRIP_ID: "trip_A",
+            Columns.START_DATE: "20260102",
+            Columns.STOP_SEQUENCE: 2,
+            Columns.ROUTE_ID: "route_1",
+            Columns.FEED_DATE: "2026-01-02",
+            Columns.FEED_HOUR: 10,
+        },
+    ]
 
 
-@pytest.fixture
-def sample_rows(sample_row: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return a list of normalized row dicts."""
-    row2 = sample_row.copy()
-    row2[Columns.VEHICLE_ID] = "vehicle_002"
-    row2[Columns.FEED_TIMESTAMP] = datetime(
-        2024, 12, 15, 10, 30, 30, tzinfo=timezone.utc
-    )
-    row2[Columns.LABEL] = "Bus 202"
-    row2[Columns.ROUTE_ID] = "route_75"
+def create_test_delta_table(
+    path: str,
+    data: list[dict],
+    schema: pa.Schema,
+    partition_cols: list[str],
+) -> None:
+    """Create a Delta Lake table with test data.
 
-    row3 = sample_row.copy()
-    row3[Columns.VEHICLE_ID] = "vehicle_003"
-    row3[Columns.FEED_TIMESTAMP] = datetime(
-        2024, 12, 15, 10, 31, 0, tzinfo=timezone.utc
-    )
-    row3[Columns.LABEL] = "Bus 303"
-    row3[Columns.ROUTE_ID] = "route_100"
+    Writes data in two batches to simulate multiple small files
+    that would be created during normal ingestion.
+    """
+    # Split data into two batches to create multiple files
+    mid = len(data) // 2
+    batches = [data[:mid], data[mid:]]
 
-    return [sample_row, row2, row3]
+    for batch in batches:
+        table = pa.Table.from_pylist(batch, schema=schema)
+        write_deltalake(
+            path,
+            table,
+            partition_by=partition_cols,
+            mode="append",
+        )
