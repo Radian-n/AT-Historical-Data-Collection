@@ -186,7 +186,7 @@ class VehiclePositions(Ingester):
             b"partition_columns": byte_string_array(partition_cols),
         },
     )
-    write_path = DATA_PATH / "vehicle_positions2"
+    write_path = DATA_PATH / "vehicle_positions"
 
     def normalise(
         self,
@@ -208,9 +208,7 @@ class VehiclePositions(Ingester):
             e = entity.vehicle
             row = {
                 Columns.POLL_TIME: self.poll_time,
-                Columns.FEED_TIMESTAMP: datetime.fromtimestamp(
-                    e.timestamp, tz=timezone.utc
-                ),
+                Columns.FEED_TIMESTAMP: e.timestamp,
                 Columns.VEHICLE_ID: e.vehicle.id or None,
                 Columns.LABEL: e.vehicle.label or None,
                 Columns.LICENSE_PLATE: e.vehicle.license_plate or None,
@@ -233,3 +231,132 @@ class VehiclePositions(Ingester):
         return rows
 
 
+class TripUpdates(Ingester):
+    """Ingester for GTFS-Realtime trip updates data.
+
+    Captures real-time trip updates including stops, arrival and
+    departure times and delays data from the Auckland Transport API.
+    """
+
+    url = "https://api.at.govt.nz/realtime/legacy/tripupdates"
+    partition_cols = [Columns.FEED_DATE, Columns.FEED_HOUR, Columns.ROUTE_ID]
+    schema = make_schema(
+        [
+            # Timestamps
+            Columns.POLL_TIME,
+            Columns.FEED_TIMESTAMP,
+            # Vehicle details
+            Columns.VEHICLE_ID,
+            Columns.LABEL,
+            Columns.LICENSE_PLATE,
+            # Trip/route info
+            Columns.TRIP_ID,
+            Columns.ROUTE_ID,
+            Columns.DIRECTION_ID,
+            Columns.SCHEDULE_RELATIONSHIP,
+            Columns.START_DATE,
+            Columns.START_TIME,
+            Columns.DELAY,  # TODO: Remove
+            # Stop update data
+            Columns.STOP_SEQUENCE,
+            Columns.STOP_ID,
+            Columns.STOP_SCHEDULE_RELATIONSHIP,
+            Columns.ARRIVAL_DELAY,
+            Columns.ARRIVAL_TIME,
+            Columns.ARRIVAL_UNCERTAINTY,
+            Columns.DEPARTURE_DELAY,
+            Columns.DEPARTURE_TIME,
+            Columns.DEPARTURE_UNCERTAINTY,
+        ],
+        metadata={
+            b"entity": b"trip_updates",
+            b"version": b"1",
+            b"partition_columns": byte_string_array(partition_cols),
+        },
+    )
+    write_path = DATA_PATH / "trip_updates"
+
+    def normalise(
+        self,
+        feed: gtfs_realtime_pb2.FeedMessage,
+    ) -> list[dict[str, Any]]:
+        """Parse trip update entities from protobuf feed.
+
+        String fields use `or None` to convert empty strings to None
+        (protobuf returns "" for unset strings). Numeric fields do not
+        use this pattern as 0 is a valid value.
+
+        Creates one row per stop_time_update. Trips with no stop updates
+        (e.g., cancelled trips) produce a single row with null stop fields.
+        """
+        rows: list[dict[str, Any]] = []
+
+        for entity in feed.entity:
+            if not entity.HasField("trip_update"):
+                continue
+
+            e = entity.trip_update
+
+            # Base row data shared by all stop updates
+            base = {
+                Columns.POLL_TIME: self.poll_time,
+                Columns.FEED_TIMESTAMP: e.timestamp,
+                Columns.VEHICLE_ID: e.vehicle.id or None,
+                Columns.LABEL: e.vehicle.label or None,
+                Columns.LICENSE_PLATE: e.vehicle.license_plate or None,
+                Columns.TRIP_ID: e.trip.trip_id or None,
+                Columns.ROUTE_ID: e.trip.route_id or None,
+                Columns.DIRECTION_ID: e.trip.direction_id,
+                Columns.SCHEDULE_RELATIONSHIP: e.trip.schedule_relationship,
+                Columns.START_DATE: e.trip.start_date or None,
+                Columns.START_TIME: e.trip.start_time or None,
+                Columns.DELAY: e.delay,  # TODO: Remove
+                Columns.ENTITY_IS_DELETED: entity.is_deleted,
+            }
+
+            if e.stop_time_update:
+                # Only record the stop time if it was close to the feed timestamp
+                for stu in e.stop_time_update:
+                    is_current = (
+                        stu.arrival.time > 0  # has arrival time
+                        and abs(e.timestamp - stu.arrival.time) <= 30 # Recent arrival
+                    ) or (
+                        stu.departure.time > 0 # has departure time
+                        and abs(e.timestamp - stu.departure.time) <= 30 # Recent departure
+                    )
+
+                    if is_current:
+                        row = {
+                            **base,
+                            Columns.STOP_SEQUENCE: stu.stop_sequence,
+                            Columns.STOP_ID: stu.stop_id or None,
+                            Columns.STOP_SCHEDULE_RELATIONSHIP: (
+                                stu.schedule_relationship
+                            ),
+                            Columns.ARRIVAL_DELAY: stu.arrival.delay,
+                            Columns.ARRIVAL_TIME: stu.arrival.time or None,
+                            Columns.ARRIVAL_UNCERTAINTY: stu.arrival.uncertainty,
+                            Columns.DEPARTURE_DELAY: stu.departure.delay,
+                            Columns.DEPARTURE_TIME: stu.departure.time or None,
+                            Columns.DEPARTURE_UNCERTAINTY: (
+                                stu.departure.uncertainty
+                            ),
+                        }
+                        rows.append(row)
+            else:
+                # Trip with no stop updates (e.g., cancelled trip)
+                row = {
+                    **base,
+                    Columns.STOP_SEQUENCE: None,
+                    Columns.STOP_ID: None,
+                    Columns.STOP_SCHEDULE_RELATIONSHIP: None,
+                    Columns.ARRIVAL_DELAY: None,
+                    Columns.ARRIVAL_TIME: None,
+                    Columns.ARRIVAL_UNCERTAINTY: None,
+                    Columns.DEPARTURE_DELAY: None,
+                    Columns.DEPARTURE_TIME: None,
+                    Columns.DEPARTURE_UNCERTAINTY: None,
+                }
+                rows.append(row)
+
+        return rows
