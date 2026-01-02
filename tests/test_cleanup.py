@@ -3,21 +3,21 @@
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pytest
+from conftest import (
+    TRIP_UPDATES_DEDUPE_KEYS,
+    TRIP_UPDATES_TEST_SCHEMA,
+    VEHICLE_POSITIONS_DEDUPE_KEYS,
+    VEHICLE_POSITIONS_TEST_SCHEMA,
+    create_test_delta_table,
+)
 
 from app.cleanup import cleanup_hour, cleanup_vehicle_positions
 from app.columns import Columns
 from app.config import Tables
-
-from conftest import (
-    VEHICLE_POSITIONS_TEST_SCHEMA,
-    TRIP_UPDATES_TEST_SCHEMA,
-    VEHICLE_POSITIONS_DEDUPE_KEYS,
-    TRIP_UPDATES_DEDUPE_KEYS,
-    create_test_delta_table,
-)
 
 pytestmark = pytest.mark.unit
 
@@ -36,7 +36,7 @@ class TestCleanupHour:
         feed_timestamp) combinations, each duplicated twice. After cleanup,
         verifies only 2 rows remain.
         """
-        table_path = tmp_path / Tables.VEHICLE_POSITIONS
+        table_path: Path = tmp_path / Tables.VEHICLE_POSITIONS
 
         # Create test table with 4 rows (2 duplicates)
         create_test_delta_table(
@@ -77,7 +77,7 @@ class TestCleanupHour:
         stop_sequence, feed_timestamp) combinations. After cleanup, verifies
         only 2 rows remain.
         """
-        table_path = tmp_path / Tables.TRIP_UPDATES
+        table_path: Path = tmp_path / Tables.TRIP_UPDATES
 
         create_test_delta_table(
             str(table_path),
@@ -137,7 +137,7 @@ class TestCleanupHour:
         hour 9 (which has no data). Verifies an info message is logged
         and no changes are made.
         """
-        table_path = tmp_path / Tables.VEHICLE_POSITIONS
+        table_path: Path = tmp_path / Tables.VEHICLE_POSITIONS
 
         # Create table with data for hour 10
         create_test_delta_table(
@@ -168,12 +168,14 @@ class TestCleanupHour:
         files). After cleanup, verifies only 1 compacted file remains and
         the old files have been vacuumed.
         """
-        table_path = tmp_path / Tables.VEHICLE_POSITIONS
+        table_path: Path = tmp_path / Tables.VEHICLE_POSITIONS
 
         # Create data with single route to keep all files in one partition
         base_ts = datetime(2026, 1, 2, 10, 30, 0, tzinfo=timezone.utc)
         feed_ts = datetime(2026, 1, 2, 10, 25, 0, tzinfo=timezone.utc)
-        single_partition_data = [
+        single_partition_data: list[
+            dict[Columns, datetime | float | int | str]
+        ] = [
             {
                 Columns.POLL_TIME: base_ts,
                 Columns.FEED_TIMESTAMP: feed_ts,
@@ -195,8 +197,10 @@ class TestCleanupHour:
         )
 
         # Count parquet files before cleanup (should be 2 from batched writes)
-        parquet_files_before = list(table_path.rglob("*.parquet"))
-        assert len(parquet_files_before) == 2, "Test setup should create 2 files"
+        parquet_files_before: list[Path] = list(table_path.rglob("*.parquet"))
+        assert len(parquet_files_before) == 2, (
+            "Test setup should create 2 files"
+        )
 
         cleanup_hour(
             table_name=Tables.VEHICLE_POSITIONS,
@@ -206,7 +210,7 @@ class TestCleanupHour:
         )
 
         # After cleanup + vacuum, should have 1 file (compacted)
-        parquet_files_after = list(table_path.rglob("*.parquet"))
+        parquet_files_after: list[Path] = list(table_path.rglob("*.parquet"))
         assert len(parquet_files_after) == 1
 
     def test_preserves_unique_rows(
@@ -219,11 +223,11 @@ class TestCleanupHour:
         feed_timestamp) combination. After cleanup, verifies all 5 rows
         are preserved.
         """
-        table_path = tmp_path / Tables.VEHICLE_POSITIONS
+        table_path: Path = tmp_path / Tables.VEHICLE_POSITIONS
 
         # Create data with all unique keys (no duplicates)
         base_ts = datetime(2026, 1, 2, 10, 30, 0, tzinfo=timezone.utc)
-        unique_data = [
+        unique_data: list[dict[Columns, datetime | float | int | str]] = [
             {
                 Columns.POLL_TIME: base_ts,
                 Columns.FEED_TIMESTAMP: datetime(
@@ -274,27 +278,29 @@ class TestCleanupEdgeCases:
         Runs cleanup for hour 10 only. Verifies hour 10 is deduplicated
         while hours 9 and 11 retain their duplicates.
         """
-        table_path = tmp_path / Tables.VEHICLE_POSITIONS
+        table_path: Path = tmp_path / Tables.VEHICLE_POSITIONS
 
         # Create data spanning hours 9, 10, and 11
         base_ts = datetime(2026, 1, 2, 10, 30, 0, tzinfo=timezone.utc)
-        multi_hour_data = []
+        multi_hour_data: list[Any] = []
         for hour in [9, 10, 11]:
             for i in range(2):
                 # Create duplicates within each hour
                 for _ in range(2):
-                    multi_hour_data.append({
-                        Columns.POLL_TIME: base_ts,
-                        Columns.FEED_TIMESTAMP: datetime(
-                            2026, 1, 2, hour, 25, 0, tzinfo=timezone.utc
-                        ),
-                        Columns.VEHICLE_ID: f"vehicle_{i}",
-                        Columns.ROUTE_ID: "route_1",
-                        Columns.LATITUDE: -36.8485,
-                        Columns.LONGITUDE: 174.7633,
-                        Columns.FEED_DATE: "2026-01-02",
-                        Columns.FEED_HOUR: hour,
-                    })
+                    multi_hour_data.append(
+                        {
+                            Columns.POLL_TIME: base_ts,
+                            Columns.FEED_TIMESTAMP: datetime(
+                                2026, 1, 2, hour, 25, 0, tzinfo=timezone.utc
+                            ),
+                            Columns.VEHICLE_ID: f"vehicle_{i}",
+                            Columns.ROUTE_ID: "route_1",
+                            Columns.LATITUDE: -36.8485,
+                            Columns.LONGITUDE: 174.7633,
+                            Columns.FEED_DATE: "2026-01-02",
+                            Columns.FEED_HOUR: hour,
+                        }
+                    )
 
         create_test_delta_table(
             str(table_path),
@@ -341,10 +347,10 @@ class TestCleanupEdgeCases:
         at 00:20 on Jan 2nd. Verifies the date boundary is handled correctly
         and hour 23 of Jan 1st is deduplicated.
         """
-        table_path = tmp_path / Tables.VEHICLE_POSITIONS
+        table_path: Path = tmp_path / Tables.VEHICLE_POSITIONS
 
         # Create data for hour 23 on Jan 1st
-        hour_23_data = [
+        hour_23_data: list[dict[Columns, datetime | float | int | str]] = [
             {
                 Columns.POLL_TIME: datetime(
                     2026, 1, 1, 23, 30, 0, tzinfo=timezone.utc
@@ -407,24 +413,26 @@ class TestCleanupEdgeCases:
         cleanup, verifies each route has exactly 1 row and all 5 partition
         directories are preserved.
         """
-        table_path = tmp_path / Tables.VEHICLE_POSITIONS
+        table_path: Path = tmp_path / Tables.VEHICLE_POSITIONS
 
         # Create data with 5 different routes, each with duplicates
         base_ts = datetime(2026, 1, 2, 10, 30, 0, tzinfo=timezone.utc)
         feed_ts = datetime(2026, 1, 2, 10, 25, 0, tzinfo=timezone.utc)
-        multi_route_data = []
+        multi_route_data: list[Any] = []
         for route_num in range(5):
             for _ in range(2):  # 2 duplicates per route
-                multi_route_data.append({
-                    Columns.POLL_TIME: base_ts,
-                    Columns.FEED_TIMESTAMP: feed_ts,
-                    Columns.VEHICLE_ID: f"vehicle_{route_num}",
-                    Columns.ROUTE_ID: f"route_{route_num}",
-                    Columns.LATITUDE: -36.8485,
-                    Columns.LONGITUDE: 174.7633,
-                    Columns.FEED_DATE: "2026-01-02",
-                    Columns.FEED_HOUR: 10,
-                })
+                multi_route_data.append(
+                    {
+                        Columns.POLL_TIME: base_ts,
+                        Columns.FEED_TIMESTAMP: feed_ts,
+                        Columns.VEHICLE_ID: f"vehicle_{route_num}",
+                        Columns.ROUTE_ID: f"route_{route_num}",
+                        Columns.LATITUDE: -36.8485,
+                        Columns.LONGITUDE: 174.7633,
+                        Columns.FEED_DATE: "2026-01-02",
+                        Columns.FEED_HOUR: 10,
+                    }
+                )
 
         create_test_delta_table(
             str(table_path),
@@ -453,7 +461,7 @@ class TestCleanupEdgeCases:
         assert after == 5
 
         # Verify each route has exactly 1 row
-        route_counts = duckdb.sql(
+        route_counts: list[tuple[Any, ...]] = duckdb.sql(
             f"SELECT route_id, COUNT(*) as cnt FROM delta_scan('{table_path}') "
             f"GROUP BY route_id"
         ).fetchall()
@@ -462,10 +470,10 @@ class TestCleanupEdgeCases:
             assert count == 1
 
         # Verify partition directories still exist for all 5 routes
-        hour_partition = table_path / "feed_date=2026-01-02" / "feed_hour=10"
-        route_partitions = [d for d in hour_partition.iterdir() if d.is_dir()]
-        route_names = {d.name for d in route_partitions}
-        expected_routes = {f"route_id=route_{i}" for i in range(5)}
+        hour_partition: Path = table_path / "feed_date=2026-01-02" / "feed_hour=10"
+        route_partitions: list[Path] = [d for d in hour_partition.iterdir() if d.is_dir()]
+        route_names: set[str] = {d.name for d in route_partitions}
+        expected_routes: set[str] = {f"route_id=route_{i}" for i in range(5)}
         assert route_names == expected_routes
 
     def test_cleanup_is_idempotent(
@@ -478,11 +486,11 @@ class TestCleanupEdgeCases:
         Verifies no errors occur and the row count and file count are
         identical after both runs.
         """
-        table_path = tmp_path / Tables.VEHICLE_POSITIONS
+        table_path: Path = tmp_path / Tables.VEHICLE_POSITIONS
 
         base_ts = datetime(2026, 1, 2, 10, 30, 0, tzinfo=timezone.utc)
         feed_ts = datetime(2026, 1, 2, 10, 25, 0, tzinfo=timezone.utc)
-        data = [
+        data: list[dict[Columns, datetime | float | int | str]] = [
             {
                 Columns.POLL_TIME: base_ts,
                 Columns.FEED_TIMESTAMP: feed_ts,
@@ -528,7 +536,7 @@ class TestCleanupEdgeCases:
         after_first = duckdb.sql(
             f"SELECT COUNT(*) FROM delta_scan('{table_path}')"
         ).fetchone()[0]
-        files_after_first = len(list(table_path.rglob("*.parquet")))
+        files_after_first: int = len(list(table_path.rglob("*.parquet")))
 
         # Second cleanup (should not error and should produce same result)
         cleanup_hour(
@@ -541,7 +549,7 @@ class TestCleanupEdgeCases:
         after_second = duckdb.sql(
             f"SELECT COUNT(*) FROM delta_scan('{table_path}')"
         ).fetchone()[0]
-        files_after_second = len(list(table_path.rglob("*.parquet")))
+        files_after_second: int = len(list(table_path.rglob("*.parquet")))
 
         # Same row count and file count after both cleanups
         assert after_first == after_second == 1
@@ -562,7 +570,7 @@ class TestCleanupVehiclePositions:
         in VEHICLE_POSITIONS_DEDUPE_KEYS rather than requiring them to be
         passed explicitly.
         """
-        table_path = tmp_path / Tables.VEHICLE_POSITIONS
+        table_path: Path = tmp_path / Tables.VEHICLE_POSITIONS
 
         create_test_delta_table(
             str(table_path),

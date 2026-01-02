@@ -38,7 +38,7 @@ class Columns(StrEnum):
     ODOMETER = "odometer"
     OCCUPANCY_STATUS = "occupancy_status"
     ENTITY_IS_DELETED = "entity_is_deleted"
-    
+
     # Stop update data
     STOP_SEQUENCE = "stop_sequence"
     STOP_ID = "stop_id"

@@ -1,7 +1,7 @@
 """Configuration settings for the Auckland Transport data collection app."""
 
-from enum import StrEnum
 import os
+from enum import StrEnum
 from pathlib import Path
 from typing import Final
 

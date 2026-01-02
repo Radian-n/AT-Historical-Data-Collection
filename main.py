@@ -5,6 +5,7 @@ from app.config import CLEANUP_MINUTE, POLL_INTERVAL_SECONDS
 from app.ingest import combined_ingest
 from app.logging_config import configure_logging
 
+
 def main() -> None:
     configure_logging()
 

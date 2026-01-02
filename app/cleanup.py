@@ -6,18 +6,19 @@ written during that hour into fewer, larger files.
 
 import logging
 from datetime import datetime, timedelta, timezone
+from logging import Logger
 
 import duckdb
 from deltalake import DeltaTable, write_deltalake
 
 from app.columns import (
-    Columns,
     TRIP_UPDATES_DEDUPE_KEYS,
     VEHICLE_POSITIONS_DEDUPE_KEYS,
+    Columns,
 )
 from app.config import DATA_PATH, Tables
 
-log = logging.getLogger(__name__)
+log: Logger = logging.getLogger(__name__)
 
 
 def cleanup_hour(
@@ -51,13 +52,15 @@ def cleanup_hour(
         return
 
     # Target the previous hour
-    target = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
-    feed_date = target.strftime("%Y-%m-%d")
-    feed_hour = target.hour
+    target: datetime = now.replace(
+        minute=0, second=0, microsecond=0
+    ) - timedelta(hours=1)
+    feed_date: str = target.strftime("%Y-%m-%d")
+    feed_hour: int = target.hour
 
     # Build predicate for partition filtering
-    predicate = f"feed_date = '{feed_date}' AND feed_hour = {feed_hour}"
-    key_cols = ", ".join(str(k) for k in dedupe_keys)
+    predicate: str = f"feed_date = '{feed_date}' AND feed_hour = {feed_hour}"
+    key_cols: str = ", ".join(str(k) for k in dedupe_keys)
 
     # Deduplication query using DuckDB:
     #
@@ -69,7 +72,7 @@ def cleanup_hour(
     #    the AT API returning stale data across multiple polls.
     # 4. Outer WHERE rn = 1 keeps exactly one row per unique key combination
     # 5. EXCLUDE (rn) removes the helper column from the final result
-    query = f"""
+    query: str = f"""
         SELECT * EXCLUDE (rn) FROM (
             SELECT *,
                 ROW_NUMBER() OVER (PARTITION BY {key_cols}) as rn
@@ -83,7 +86,10 @@ def cleanup_hour(
 
     if deduped.num_rows == 0:
         log.info(
-            "No data for %s %s hour %d, skipping", table_name, feed_date, feed_hour
+            "No data for %s %s hour %d, skipping",
+            table_name,
+            feed_date,
+            feed_hour,
         )
         return
 
@@ -97,7 +103,9 @@ def cleanup_hour(
 
     # Vacuum old file versions (physically delete unreferenced files)
     dt = DeltaTable(local_path)
-    dt.vacuum(retention_hours=0, dry_run=False, enforce_retention_duration=False)
+    dt.vacuum(
+        retention_hours=0, dry_run=False, enforce_retention_duration=False
+    )
 
     log.info(
         "Cleaned %s %s hour %d: %d rows",

@@ -10,14 +10,16 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from logging import Logger
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import pyarrow as pa
 import pyarrow.compute as pc
 import requests
 from deltalake import write_deltalake
 from google.transit import gtfs_realtime_pb2
+from requests.models import Response
 
 from app.columns import Columns, make_schema
 from app.config import (
@@ -90,15 +92,15 @@ class CombinedFeedFetcher:
             requests.RequestException: On HTTP errors.
             DecodeError: On protobuf parsing errors.
         """
-        poll_time = datetime.now(timezone.utc)
+        poll_time: datetime = datetime.now(timezone.utc)
 
-        resp = requests.get(url=self.url, headers=self.headers)
+        resp: Response = requests.get(url=self.url, headers=self.headers)
         resp.raise_for_status()
 
-        raw_bytes = resp.content
+        raw_bytes: bytes | Any = resp.content
 
         # Skip identical feed payloads
-        md5 = hashlib.md5(raw_bytes, usedforsecurity=False).hexdigest()
+        md5: str = hashlib.md5(raw_bytes, usedforsecurity=False).hexdigest()
         if md5 == self._last_md5:
             self.log.info("Feed unchanged (MD5 match); skipping")
             return None
@@ -147,7 +149,7 @@ class Ingest(ABC):
     ) -> int | None:
         self.poll_time = poll_time
         try:
-            rows = self.normalise(feed)
+            rows: list[dict[str, Any]] = self.normalise(feed)
             self.log.info("%d rows normalised", len(rows))
         except Exception:
             self.log.exception("Unexpected error in normalise")
@@ -194,7 +196,11 @@ class VehiclePositions(Ingest):
     speed, and trip information from the Auckland Transport API.
     """
 
-    partition_cols = [Columns.FEED_DATE, Columns.FEED_HOUR, Columns.ROUTE_ID]
+    partition_cols: list[Columns] = [
+        Columns.FEED_DATE,
+        Columns.FEED_HOUR,
+        Columns.ROUTE_ID,
+    ]
     schema = make_schema(
         [
             # Timestamps
@@ -226,7 +232,7 @@ class VehiclePositions(Ingest):
             b"partition_columns": list_to_json_bytes(partition_cols),
         },
     )
-    write_path = DATA_PATH / "vehicle_positions"
+    write_path: Path = DATA_PATH / "vehicle_positions"
 
     def normalise(
         self,
@@ -246,7 +252,7 @@ class VehiclePositions(Ingest):
                 continue
 
             e = entity.vehicle
-            row = {
+            row: dict[Columns, datetime | Any | None] = {
                 Columns.POLL_TIME: self.poll_time,
                 Columns.FEED_TIMESTAMP: e.timestamp,
                 Columns.VEHICLE_ID: e.vehicle.id or None,
@@ -278,7 +284,11 @@ class TripUpdates(Ingest):
     departure times and delays data from the Auckland Transport API.
     """
 
-    partition_cols = [Columns.FEED_DATE, Columns.FEED_HOUR, Columns.ROUTE_ID]
+    partition_cols: list[Columns] = [
+        Columns.FEED_DATE,
+        Columns.FEED_HOUR,
+        Columns.ROUTE_ID,
+    ]
     schema = make_schema(
         [
             # Timestamps
@@ -314,7 +324,7 @@ class TripUpdates(Ingest):
             b"partition_columns": list_to_json_bytes(partition_cols),
         },
     )
-    write_path = DATA_PATH / "trip_updates"
+    write_path: Path = DATA_PATH / "trip_updates"
 
     def normalise(
         self,
@@ -338,7 +348,7 @@ class TripUpdates(Ingest):
             e = entity.trip_update
 
             # Base row data shared by all stop updates
-            base = {
+            base: dict[Columns, datetime | Any | None] = {
                 Columns.POLL_TIME: self.poll_time,
                 Columns.FEED_TIMESTAMP: e.timestamp,
                 Columns.VEHICLE_ID: e.vehicle.id or None,
@@ -357,7 +367,7 @@ class TripUpdates(Ingest):
             if e.stop_time_update:
                 for stu in e.stop_time_update:
                     # Only record the stop time if it was close to the feed timestamp
-                    is_current = (
+                    is_current: Literal[False] | Any = (
                         # Recent arrival
                         stu.arrival.time > 0  # has arrival time
                         and abs(e.timestamp - stu.arrival.time) <= 30
@@ -368,7 +378,7 @@ class TripUpdates(Ingest):
                     )
 
                     if is_current:
-                        row = {
+                        row: dict[Columns, datetime | Any | None] = {
                             **base,
                             Columns.STOP_SEQUENCE: stu.stop_sequence,
                             Columns.STOP_ID: stu.stop_id or None,
@@ -409,7 +419,7 @@ vehicle_positions = VehiclePositions()
 trip_updates = TripUpdates()
 
 
-log = logging.getLogger(__name__)
+log: Logger = logging.getLogger(__name__)
 
 
 def combined_ingest() -> IngestResult | None:
@@ -423,14 +433,14 @@ def combined_ingest() -> IngestResult | None:
         IngestResult: Row counts on success.
         None: If feed unchanged (skipped).
     """
-    result = combined_feed.fetch()
+    result: FetchResult | None = combined_feed.fetch()
 
     if result is None:
         log.debug("Feed unchanged; skipping ingest")
         return None
 
-    vp_rows = vehicle_positions.ingest(result.feed, result.poll_time) or 0
-    tu_rows = trip_updates.ingest(result.feed, result.poll_time) or 0
+    vp_rows: int = vehicle_positions.ingest(result.feed, result.poll_time) or 0
+    tu_rows: int = trip_updates.ingest(result.feed, result.poll_time) or 0
 
     return IngestResult(
         vehicle_positions_rows=vp_rows,
