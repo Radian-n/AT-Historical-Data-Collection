@@ -1,26 +1,20 @@
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app.config import POLL_INTERVAL_SECONDS
-from app.entities.vehicle_positions import VehiclePositionEntity
-from app.entities.trip_updates import TripUpdateEntity
+from app.ingest import VehiclePositions
 from app.logging_config import configure_logging
-from app.pipeline import RealtimePipeline
 
 
 def main() -> None:
     configure_logging()
 
-    trip_updates = RealtimePipeline(TripUpdateEntity)
-    trip_updates.run_once()
-
-    vehicle_positions = RealtimePipeline(VehiclePositionEntity)
+    vehicle_positions = VehiclePositions()
 
     scheduler = BlockingScheduler()
     scheduler.add_job(
-        vehicle_positions.run_once,
+        vehicle_positions.run,
         "interval",
         seconds=POLL_INTERVAL_SECONDS,
-        id=VehiclePositionEntity.TABLE_NAME,
         misfire_grace_time=POLL_INTERVAL_SECONDS,
     )
 

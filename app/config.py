@@ -24,11 +24,6 @@ AT_API_KEY: Final[str] = os.getenv("AT_API_KEY", "")
 if not AT_API_KEY:
     raise RuntimeError("AT_API_KEY not set")
 
-AT_API_HEADERS: Final[dict[str, str]] = {
-    "Ocp-Apim-Subscription-Key": AT_API_KEY,
-    "Accept": "application/x-protobuf",
-}
 
 # Storage
-DATA_ROOT: Final[Path] = Path("data")
-BUFFER_CHECKPOINT_ROOT: Final[Path] = Path("buffer_checkpoint")
+DATA_PATH: Final[Path] = Path("data")
