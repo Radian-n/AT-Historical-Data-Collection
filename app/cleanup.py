@@ -106,18 +106,21 @@ def cleanup_hour(
         partition_by=partition_cols,
     )
 
-    # Vacuum old file versions (physically delete unreferenced files)
+    # Reload table to see the new commit before vacuuming
     dt = DeltaTable(local_path)
-    dt.vacuum(
+
+    # Vacuum old file versions (physically delete unreferenced files)
+    vacuumed_files = dt.vacuum(
         retention_hours=0, dry_run=False, enforce_retention_duration=False
     )
 
     log.info(
-        "Cleaned %s %s hour %d: %d rows",
+        "Cleaned %s %s hour %d: %d rows, %d files vacuumed",
         table_name,
         feed_date,
         feed_hour,
         deduped.num_rows,
+        len(vacuumed_files),
     )
 
 

@@ -259,7 +259,8 @@ class VehiclePositions(Ingest):
                 Columns.LABEL: e.vehicle.label or None,
                 Columns.LICENSE_PLATE: e.vehicle.license_plate or None,
                 Columns.TRIP_ID: e.trip.trip_id or None,
-                Columns.ROUTE_ID: e.trip.route_id or None,
+                Columns.ROUTE_ID: e.trip.route_id
+                or "NA",  # Can't be NULL and a partition.
                 Columns.DIRECTION_ID: e.trip.direction_id,
                 Columns.SCHEDULE_RELATIONSHIP: e.trip.schedule_relationship,
                 Columns.START_DATE: e.trip.start_date or None,
@@ -355,7 +356,8 @@ class TripUpdates(Ingest):
                 Columns.LABEL: e.vehicle.label or None,
                 Columns.LICENSE_PLATE: e.vehicle.license_plate or None,
                 Columns.TRIP_ID: e.trip.trip_id or None,
-                Columns.ROUTE_ID: e.trip.route_id or None,
+                Columns.ROUTE_ID: e.trip.route_id
+                or "NA",  # Can't be NULL and a partition.
                 Columns.DIRECTION_ID: e.trip.direction_id,
                 Columns.SCHEDULE_RELATIONSHIP: e.trip.schedule_relationship,
                 Columns.START_DATE: e.trip.start_date or None,
