@@ -51,6 +51,10 @@ def cleanup_hour(
         log.warning("Table %s does not exist, skipping cleanup", table_name)
         return
 
+    # Load table and read partition columns from metadata
+    dt = DeltaTable(local_path)
+    partition_cols: list[str] = dt.metadata().partition_columns
+
     # Target the previous hour
     target: datetime = now.replace(
         minute=0, second=0, microsecond=0
@@ -99,6 +103,7 @@ def cleanup_hour(
         deduped,
         mode="overwrite",
         predicate=predicate,
+        partition_by=partition_cols,
     )
 
     # Vacuum old file versions (physically delete unreferenced files)
