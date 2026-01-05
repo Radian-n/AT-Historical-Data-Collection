@@ -381,15 +381,17 @@ class TripUpdates(Ingest):
 
             if e.stop_time_update:
                 for stu in e.stop_time_update:
-                    # Only record the stop time if it was close to the feed timestamp
+                    # Don't record arrival/departure predictions (uncertainty)
                     is_current: Literal[False] | Any = (
-                        # Recent arrival
-                        stu.arrival.time > 0  # has arrival time
-                        and abs(e.timestamp - stu.arrival.time) <= 30
+                        # Has arrival time
+                        stu.arrival.time > 0
+                        # Not prediction
+                        and stu.arrival.uncertainty == 0
                     ) or (
-                        # Recent departure
-                        stu.departure.time > 0  # has departure time
-                        and abs(e.timestamp - stu.departure.time) <= 30
+                        # Has departure time
+                        stu.departure.time > 0
+                        # Not prediction
+                        and stu.arrival.uncertainty == 0
                     )
 
                     if is_current:
