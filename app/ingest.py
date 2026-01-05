@@ -25,6 +25,7 @@ from app.columns import Columns, make_schema
 from app.config import (
     AT_API_KEY,
     DATA_PATH,
+    STALE_THRESHOLD_MINUTES,
 )
 from app.utils import list_to_json_bytes
 
@@ -246,12 +247,18 @@ class VehiclePositions(Ingest):
         north).
         """
         rows: list[dict[str, Any]] = []
+        poll_timestamp: int = int(self.poll_time.timestamp())
+        stale_threshold_seconds: int = STALE_THRESHOLD_MINUTES * 60
 
         for entity in feed.entity:
             if not entity.HasField("vehicle"):
                 continue
 
             e = entity.vehicle
+
+            # Skip entities with stale timestamps to avoid partition sprawl
+            if abs(poll_timestamp - e.timestamp) > stale_threshold_seconds:
+                continue
             row: dict[Columns, datetime | Any | None] = {
                 Columns.POLL_TIME: self.poll_time,
                 Columns.FEED_TIMESTAMP: e.timestamp,
@@ -341,12 +348,18 @@ class TripUpdates(Ingest):
         (e.g., cancelled trips) produce a single row with null stop fields.
         """
         rows: list[dict[str, Any]] = []
+        poll_timestamp: int = int(self.poll_time.timestamp())
+        stale_threshold_seconds: int = STALE_THRESHOLD_MINUTES * 60
 
         for entity in feed.entity:
             if not entity.HasField("trip_update"):
                 continue
 
             e = entity.trip_update
+
+            # Skip entities with stale timestamps to avoid partition sprawl
+            if abs(poll_timestamp - e.timestamp) > stale_threshold_seconds:
+                continue
 
             # Base row data shared by all stop updates
             base: dict[Columns, datetime | Any | None] = {

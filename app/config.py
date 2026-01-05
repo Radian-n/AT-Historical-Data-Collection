@@ -14,6 +14,11 @@ POLL_INTERVAL_SECONDS: Final[float] = int(
     os.getenv("POLL_INTERVAL_SECONDS", "30")
 )
 
+# Maximum age (minutes) for feed_timestamp relative to poll_time.
+# Entities older than this are skipped to avoid partition sprawl.
+# This value should be less than CLEANUP_MINUTE.
+STALE_THRESHOLD_MINUTES: Final[int] = 15
+
 # Minute of the hour to run cleanup (dedupe + compact).
 # AT API can return data up to ~15 minutes old, so a response at 05:14:30
 # may still contain data from the 04:00 hour. Running at minute 20 provides
