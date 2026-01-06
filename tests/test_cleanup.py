@@ -8,15 +8,17 @@ from typing import Any
 import duckdb
 import pytest
 from conftest import (
-    TRIP_UPDATES_DEDUPE_KEYS,
     TRIP_UPDATES_TEST_SCHEMA,
-    VEHICLE_POSITIONS_DEDUPE_KEYS,
     VEHICLE_POSITIONS_TEST_SCHEMA,
     create_test_delta_table,
 )
 
-from app.cleanup import cleanup_hour, cleanup_vehicle_positions
-from app.columns import Columns
+from app.cleanup import (
+    cleanup_hour,
+    cleanup_trip_updates_hour,
+    cleanup_vehicle_positions,
+)
+from app.columns import VEHICLE_POSITIONS_DEDUPE_KEYS, Columns
 from app.config import Tables
 
 pytestmark = pytest.mark.unit
@@ -66,16 +68,16 @@ class TestCleanupHour:
         ).fetchone()[0]
         assert after == 2
 
-    def test_deduplicates_trip_updates(
+    def test_merges_trip_updates_arrival_departure(
         self,
         tmp_path: Path,
         sample_trip_updates_data: list[dict],
     ) -> None:
-        """Cleanup should remove duplicate rows for trip updates.
+        """Cleanup should merge arrival and departure rows for same stop.
 
-        Creates a table with 4 rows containing 2 unique (trip_id, start_date,
-        stop_sequence, feed_timestamp) combinations. After cleanup, verifies
-        only 2 rows remain.
+        Creates a table with 4 rows: 2 stops, each with separate arrival and
+        departure rows. After cleanup, verifies 2 merged rows remain with
+        both arrival and departure data combined.
         """
         table_path: Path = tmp_path / Tables.TRIP_UPDATES
 
@@ -93,18 +95,43 @@ class TestCleanupHour:
         assert before == 4
 
         # Run cleanup
-        cleanup_hour(
-            table_name=Tables.TRIP_UPDATES,
-            dedupe_keys=TRIP_UPDATES_DEDUPE_KEYS,
+        cleanup_trip_updates_hour(
             now=datetime(2026, 1, 2, 11, 20, 0, tzinfo=timezone.utc),
             data_path=tmp_path,
         )
 
-        # Verify 2 rows after cleanup
+        # Verify 2 merged rows after cleanup
         after = duckdb.sql(
             f"SELECT COUNT(*) as cnt FROM delta_scan('{table_path}')"
         ).fetchone()[0]
         assert after == 2
+
+        # Verify both arrival and departure data are present in merged rows
+        # (avoid selecting timestamp columns directly due to DuckDB/pytz issue)
+        merged_rows = duckdb.sql(
+            f"""
+            SELECT stop_sequence, arrival_delay,
+                   arrival_time IS NOT NULL as has_arrival,
+                   departure_delay,
+                   departure_time IS NOT NULL as has_departure
+            FROM delta_scan('{table_path}')
+            ORDER BY stop_sequence
+            """
+        ).fetchall()
+
+        # Stop 1: should have both arrival and departure
+        assert merged_rows[0][0] == 1  # stop_sequence
+        assert merged_rows[0][1] == 30  # arrival_delay
+        assert merged_rows[0][2] is True  # has_arrival
+        assert merged_rows[0][3] == 45  # departure_delay
+        assert merged_rows[0][4] is True  # has_departure
+
+        # Stop 2: should have both arrival and departure
+        assert merged_rows[1][0] == 2  # stop_sequence
+        assert merged_rows[1][1] == 60  # arrival_delay
+        assert merged_rows[1][2] is True  # has_arrival
+        assert merged_rows[1][3] == 75  # departure_delay
+        assert merged_rows[1][4] is True  # has_departure
 
     def test_skips_nonexistent_table(
         self,
