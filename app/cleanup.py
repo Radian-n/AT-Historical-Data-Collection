@@ -186,9 +186,16 @@ def cleanup_trip_updates_hour(
 
     The merge logic:
     - Groups by (trip_id, start_date, stop_sequence, stop_id)
-    - Takes arrival_* fields from the row where arrival_time IS NOT NULL
-    - Takes departure_* fields from the row where departure_time IS NOT NULL
-    - Takes the latest feed_timestamp and poll_time
+    - Takes arrival_* fields from rows where arrival_time IS NOT NULL
+      AND arrival_uncertainty = 0 (confirmed, not predicted)
+    - Takes departure_* fields from rows where departure_time IS NOT NULL
+      AND departure_uncertainty = 0 (confirmed, not predicted)
+    - Takes the latest feed_timestamp and poll_time for shared fields
+
+    The uncertainty filter excludes prediction data. A row may be included
+    during ingest because it has valid departure data, but its arrival data
+    could be a prediction (uncertainty != 0). The filter ensures only
+    confirmed times are retained in the merged output.
 
     Args:
         now: Current time (for testability). Defaults to UTC now.
@@ -216,8 +223,10 @@ def cleanup_trip_updates_hour(
 
     # Merge query: combines arrival and departure rows for the same stop.
     #
-    # Arrival fields are taken from rows where arrival_time IS NOT NULL.
-    # Departure fields are taken from rows where departure_time IS NOT NULL.
+    # Arrival fields are taken from rows where arrival_time IS NOT NULL
+    # and arrival_uncertainty = 0 (excludes predictions).
+    # Departure fields are taken from rows where departure_time IS NOT NULL
+    # and departure_uncertainty = 0 (excludes predictions).
     # For rows that have both (rare), both will be populated from same row.
     # For shared fields, we take the latest values (MAX).
     #
@@ -244,16 +253,24 @@ def cleanup_trip_updates_hour(
             {Columns.STOP_ID},
             MAX({Columns.STOP_SCHEDULE_RELATIONSHIP})
                 as {Columns.STOP_SCHEDULE_RELATIONSHIP},
-            MAX(CASE WHEN ({Columns.ARRIVAL_TIME} IS NOT NULL)
-                THEN {Columns.ARRIVAL_DELAY} END) as {Columns.ARRIVAL_DELAY},
-            MAX({Columns.ARRIVAL_TIME}) as {Columns.ARRIVAL_TIME},
             MAX(CASE WHEN {Columns.ARRIVAL_TIME} IS NOT NULL
+                      AND {Columns.ARRIVAL_UNCERTAINTY} = 0
+                THEN {Columns.ARRIVAL_DELAY} END) as {Columns.ARRIVAL_DELAY},
+            MAX(CASE WHEN {Columns.ARRIVAL_TIME} IS NOT NULL
+                      AND {Columns.ARRIVAL_UNCERTAINTY} = 0
+                THEN {Columns.ARRIVAL_TIME} END) as {Columns.ARRIVAL_TIME},
+            MAX(CASE WHEN {Columns.ARRIVAL_TIME} IS NOT NULL
+                      AND {Columns.ARRIVAL_UNCERTAINTY} = 0
                 THEN {Columns.ARRIVAL_UNCERTAINTY} END)
                 as {Columns.ARRIVAL_UNCERTAINTY},
             MAX(CASE WHEN {Columns.DEPARTURE_TIME} IS NOT NULL
+                      AND {Columns.DEPARTURE_UNCERTAINTY} = 0
                 THEN {Columns.DEPARTURE_DELAY} END) as {Columns.DEPARTURE_DELAY},
-            MAX({Columns.DEPARTURE_TIME}) as {Columns.DEPARTURE_TIME},
             MAX(CASE WHEN {Columns.DEPARTURE_TIME} IS NOT NULL
+                      AND {Columns.DEPARTURE_UNCERTAINTY} = 0
+                THEN {Columns.DEPARTURE_TIME} END) as {Columns.DEPARTURE_TIME},
+            MAX(CASE WHEN {Columns.DEPARTURE_TIME} IS NOT NULL
+                      AND {Columns.DEPARTURE_UNCERTAINTY} = 0
                 THEN {Columns.DEPARTURE_UNCERTAINTY} END)
                 as {Columns.DEPARTURE_UNCERTAINTY},
             MAX({Columns.ENTITY_IS_DELETED}) as {Columns.ENTITY_IS_DELETED},
@@ -301,6 +318,9 @@ def cleanup_trip_updates(
 ) -> None:
     """Cleanup trip_updates table for the previous hour."""
     cleanup_trip_updates_hour(now=now, data_path=data_path)
+    # TODO: Join with current GTFS Static data to fill in missing rows?
+    # arrival and departure time columns become SCHEDULED, rather than actual.
+    # actual times can be derived from this.
 
 
 def cleanup_all(now: datetime | None = None) -> None:
