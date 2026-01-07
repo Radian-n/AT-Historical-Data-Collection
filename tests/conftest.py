@@ -8,7 +8,7 @@ import pyarrow as pa
 import pytest
 from deltalake import write_deltalake
 
-from app.columns import Columns, make_schema
+from app.columns import Columns, REALTIME_FIELD_TYPES, make_schema
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -18,7 +18,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 # Minimal schema for vehicle positions tests
 VEHICLE_POSITIONS_TEST_SCHEMA = make_schema(
-    [
+    columns=[
         Columns.POLL_TIME,
         Columns.FEED_TIMESTAMP,
         Columns.VEHICLE_ID,
@@ -27,12 +27,13 @@ VEHICLE_POSITIONS_TEST_SCHEMA = make_schema(
         Columns.LONGITUDE,
         Columns.FEED_DATE,
         Columns.FEED_HOUR,
-    ]
+    ],
+    field_types=REALTIME_FIELD_TYPES,
 )
 
 # Schema for trip updates tests (includes arrival/departure columns for merge)
 TRIP_UPDATES_TEST_SCHEMA = make_schema(
-    [
+    columns=[
         Columns.POLL_TIME,
         Columns.FEED_TIMESTAMP,
         Columns.VEHICLE_ID,
@@ -57,7 +58,8 @@ TRIP_UPDATES_TEST_SCHEMA = make_schema(
         Columns.ENTITY_IS_DELETED,
         Columns.FEED_DATE,
         Columns.FEED_HOUR,
-    ]
+    ],
+    field_types=REALTIME_FIELD_TYPES,
 )
 
 

@@ -24,7 +24,7 @@ import requests
 from deltalake import write_deltalake
 from requests.models import Response
 
-from app.columns import Columns, make_schema
+from app.columns import Columns, STATIC_FIELD_TYPES, make_schema
 from app.config import DATA_PATH, GTFS_STATIC_URL
 
 
@@ -470,6 +470,7 @@ class AgencyData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -506,6 +507,7 @@ class StopsData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -538,6 +540,7 @@ class RoutesData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -569,6 +572,7 @@ class TripsData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -586,8 +590,8 @@ class StopTimesData(StaticDataIngest):
     schema: pa.Schema = make_schema(
         columns=[
             Columns.TRIP_ID,
-            Columns.ARRIVAL_TIME_STR,
-            Columns.DEPARTURE_TIME_STR,
+            Columns.ARRIVAL_TIME,
+            Columns.DEPARTURE_TIME,
             Columns.STOP_ID,
             Columns.STOP_SEQUENCE,
             Columns.STOP_HEADSIGN,
@@ -600,6 +604,7 @@ class StopTimesData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -631,6 +636,7 @@ class CalendarData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -655,6 +661,7 @@ class CalendarDatesData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -681,6 +688,7 @@ class ShapesData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -709,6 +717,7 @@ class FareAttributesData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -735,6 +744,7 @@ class FareRulesData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -761,6 +771,7 @@ class FrequenciesData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -786,6 +797,7 @@ class TransfersData(StaticDataIngest):
             Columns.FEED_VERSION,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",
@@ -817,6 +829,7 @@ class FeedInfoData(StaticDataIngest):
             Columns.VALID_TO,
             Columns.DOWNLOADED_AT,
         ],
+        field_types=STATIC_FIELD_TYPES,
         metadata={
             "entity": name,
             "version": "1",

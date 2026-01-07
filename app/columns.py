@@ -110,8 +110,10 @@ class Columns(StrEnum):
     SHAPE_DIST_TRAVELED = "shape_dist_traveled"
     TIMEPOINT = "timepoint"
     # Static stop times (HH:MM:SS strings, can exceed 24:00:00)
-    ARRIVAL_TIME_STR = "arrival_time"
-    DEPARTURE_TIME_STR = "departure_time"
+    # Note: These share names with realtime timestamps but have different
+    # types. See ALLOWED_TYPE_DIFFERENCES for documentation.
+    # ARRIVAL_TIME = "arrival_time"  # Defined above (realtime timestamp)
+    # DEPARTURE_TIME = "departure_time"  # Defined above (realtime timestamp)
 
     # Calendar
     MONDAY = "monday"
@@ -186,8 +188,16 @@ TRIP_UPDATES_DEDUPE_KEYS: tuple[Columns, ...] = (
 )
 
 
-# PyArrow type for each column.
-FIELD_TYPES: dict[Columns, pa.DataType] = {
+# Columns with intentionally different types between realtime and static.
+# Realtime: Unix timestamps (int -> pa.timestamp)
+# Static: HH:MM:SS strings that can exceed 24:00:00 (pa.string)
+ALLOWED_TYPE_DIFFERENCES: set[Columns] = {
+    Columns.ARRIVAL_TIME,
+    Columns.DEPARTURE_TIME,
+}
+
+# PyArrow types for realtime GTFS data (vehicle positions, trip updates).
+REALTIME_FIELD_TYPES: dict[Columns, pa.DataType] = {
     # Timestamps
     Columns.POLL_TIME: pa.timestamp("s", tz="+00:00"),
     Columns.FEED_TIMESTAMP: pa.timestamp("s", tz="+00:00"),
@@ -224,7 +234,10 @@ FIELD_TYPES: dict[Columns, pa.DataType] = {
     # Derived columns
     Columns.FEED_DATE: pa.string(),
     Columns.FEED_HOUR: pa.int32(),
-    # Static Columns ----
+}
+
+# PyArrow types for static GTFS data (routes, stops, trips, etc.).
+STATIC_FIELD_TYPES: dict[Columns, pa.DataType] = {
     # Agency
     Columns.AGENCY_ID: pa.string(),
     Columns.AGENCY_NAME: pa.string(),
@@ -235,6 +248,7 @@ FIELD_TYPES: dict[Columns, pa.DataType] = {
     Columns.AGENCY_FARE_URL: pa.string(),
     Columns.AGENCY_EMAIL: pa.string(),
     # Stops
+    Columns.STOP_ID: pa.string(),
     Columns.STOP_CODE: pa.string(),
     Columns.STOP_NAME: pa.string(),
     Columns.STOP_DESC: pa.string(),
@@ -247,8 +261,8 @@ FIELD_TYPES: dict[Columns, pa.DataType] = {
     Columns.STOP_TIMEZONE: pa.string(),
     Columns.PLATFORM_CODE: pa.string(),
     Columns.WHEELCHAIR_BOARDING: pa.int32(),
-    Columns.END_DATE: pa.string(),
     # Routes
+    Columns.ROUTE_ID: pa.string(),
     Columns.ROUTE_SHORT_NAME: pa.string(),
     Columns.ROUTE_LONG_NAME: pa.string(),
     Columns.ROUTE_DESC: pa.string(),
@@ -259,21 +273,24 @@ FIELD_TYPES: dict[Columns, pa.DataType] = {
     Columns.ROUTE_SORT_ORDER: pa.int32(),
     Columns.CONTRACT_ID: pa.string(),
     # Trips
+    Columns.TRIP_ID: pa.string(),
     Columns.SERVICE_ID: pa.string(),
     Columns.TRIP_HEADSIGN: pa.string(),
     Columns.TRIP_SHORT_NAME: pa.string(),
+    Columns.DIRECTION_ID: pa.int32(),
     Columns.BLOCK_ID: pa.string(),
     Columns.SHAPE_ID: pa.string(),
     Columns.WHEELCHAIR_ACCESSIBLE: pa.int32(),
     Columns.BIKES_ALLOWED: pa.int32(),
-    # Stop Times
+    # Stop Times (arrival/departure are HH:MM:SS strings, can exceed 24:00)
+    Columns.STOP_SEQUENCE: pa.int32(),
+    Columns.ARRIVAL_TIME: pa.string(),
+    Columns.DEPARTURE_TIME: pa.string(),
     Columns.STOP_HEADSIGN: pa.string(),
     Columns.PICKUP_TYPE: pa.int32(),
     Columns.DROP_OFF_TYPE: pa.int32(),
     Columns.SHAPE_DIST_TRAVELED: pa.float64(),
     Columns.TIMEPOINT: pa.int32(),
-    Columns.ARRIVAL_TIME_STR: pa.string(),
-    Columns.DEPARTURE_TIME_STR: pa.string(),
     # Calendar
     Columns.MONDAY: pa.string(),
     Columns.TUESDAY: pa.string(),
@@ -282,10 +299,13 @@ FIELD_TYPES: dict[Columns, pa.DataType] = {
     Columns.FRIDAY: pa.string(),
     Columns.SATURDAY: pa.string(),
     Columns.SUNDAY: pa.string(),
+    Columns.START_DATE: pa.string(),
+    Columns.END_DATE: pa.string(),
     # Calendar Dates
     Columns.DATE: pa.string(),
     Columns.EXCEPTION_TYPE: pa.int32(),
     # Shapes
+    Columns.SHAPE_ID: pa.string(),
     Columns.SHAPE_PT_LAT: pa.float64(),
     Columns.SHAPE_PT_LON: pa.float64(),
     Columns.SHAPE_PT_SEQUENCE: pa.int32(),
@@ -301,6 +321,7 @@ FIELD_TYPES: dict[Columns, pa.DataType] = {
     Columns.DESTINATION_ID: pa.string(),
     Columns.CONTAINS_ID: pa.string(),
     # Frequencies
+    Columns.START_TIME: pa.string(),
     Columns.END_TIME: pa.string(),
     Columns.HEADWAY_SECS: pa.int32(),
     Columns.EXACT_TIMES: pa.int32(),
@@ -316,29 +337,67 @@ FIELD_TYPES: dict[Columns, pa.DataType] = {
     Columns.FEED_START_DATE: pa.string(),
     Columns.FEED_END_DATE: pa.string(),
     Columns.FEED_VERSION: pa.string(),
-    # Derived Column
+    # Version tracking columns
     Columns.DOWNLOADED_AT: pa.timestamp("s", tz="+00:00"),
     Columns.VALID_FROM: pa.string(),
     Columns.VALID_TO: pa.string(),
 }
 
 
+def _validate_field_types() -> None:
+    """Validate that field type differences between domains are intentional.
+
+    Compares REALTIME_FIELD_TYPES and STATIC_FIELD_TYPES for columns that
+    appear in both. Any type differences must be listed in
+    ALLOWED_TYPE_DIFFERENCES.
+
+    Raises:
+        ValueError: If unexpected type differences are found.
+    """
+    common_cols = set(REALTIME_FIELD_TYPES) & set(STATIC_FIELD_TYPES)
+    unexpected: list[str] = []
+
+    for col in common_cols:
+        realtime_type = REALTIME_FIELD_TYPES[col]
+        static_type = STATIC_FIELD_TYPES[col]
+        if realtime_type != static_type:
+            if col not in ALLOWED_TYPE_DIFFERENCES:
+                unexpected.append(
+                    f"  {col}: realtime={realtime_type}, static={static_type}"
+                )
+
+    if unexpected:
+        raise ValueError(
+            "Unexpected type differences between REALTIME_FIELD_TYPES and "
+            "STATIC_FIELD_TYPES:\n" + "\n".join(unexpected) + "\n"
+            "Add to ALLOWED_TYPE_DIFFERENCES if intentional."
+        )
+
+
+# Run validation at import time
+_validate_field_types()
+
+
 def make_schema(
     columns: list[Columns],
+    field_types: dict[Columns, pa.DataType],
     metadata: dict[str, str] | None = None,
 ) -> pa.Schema:
     """Build a PyArrow schema from a list of column names.
 
     Args:
         columns: List of Columns enum values defining schema fields.
+        field_types: Mapping of columns to PyArrow types. Use
+            REALTIME_FIELD_TYPES for realtime data or STATIC_FIELD_TYPES
+            for static GTFS data.
         metadata: Optional schema-level metadata.
 
     Returns:
         PyArrow schema with fields in the specified order.
 
     Raises:
-        KeyError: If a column is not defined in FIELD_TYPES.
+        KeyError: If a column is not defined in field_types.
     """
-    fields = [pa.field(col, FIELD_TYPES[col]) for col in columns]
+    fields = [pa.field(col, field_types[col]) for col in columns]
     metadata_json = encode_metadata_dict(metadata) if metadata else None
     return pa.schema(fields, metadata=metadata_json)

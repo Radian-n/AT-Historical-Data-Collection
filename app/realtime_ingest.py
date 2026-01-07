@@ -21,7 +21,7 @@ from deltalake import write_deltalake
 from google.transit import gtfs_realtime_pb2
 from requests.models import Response
 
-from app.columns import Columns, make_schema
+from app.columns import Columns, REALTIME_FIELD_TYPES, make_schema
 from app.config import (
     AT_API_KEY,
     DATA_PATH,
@@ -202,7 +202,7 @@ class VehiclePositions(Ingest):
         Columns.ROUTE_ID,
     ]
     schema = make_schema(
-        [
+        columns=[
             # Timestamps
             Columns.POLL_TIME,
             Columns.FEED_TIMESTAMP,
@@ -226,6 +226,7 @@ class VehiclePositions(Ingest):
             Columns.OCCUPANCY_STATUS,
             Columns.ENTITY_IS_DELETED,
         ],
+        field_types=REALTIME_FIELD_TYPES,
         metadata={
             "entity": "vehicle_positions",
             "version": "1",
@@ -297,7 +298,7 @@ class TripUpdates(Ingest):
         Columns.ROUTE_ID,
     ]
     schema = make_schema(
-        [
+        columns=[
             # Timestamps
             Columns.POLL_TIME,
             Columns.FEED_TIMESTAMP,
@@ -325,6 +326,7 @@ class TripUpdates(Ingest):
             Columns.DEPARTURE_UNCERTAINTY,
             Columns.ENTITY_IS_DELETED,
         ],
+        field_types=REALTIME_FIELD_TYPES,
         metadata={
             "entity": "trip_updates",
             "version": "1",
