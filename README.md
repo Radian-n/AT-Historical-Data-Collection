@@ -1,15 +1,20 @@
 # AT Historical Data Collection
 
-Collects real-time GTFS data from the Auckland Transport API and stores it
-in Delta Lake tables for historical analysis.
+Collects real-time and static GTFS data from the Auckland Transport API and
+stores it in Delta Lake tables for historical analysis.
 
 ## Features
 
-- Collects vehicle positions, trip updates, ferry positions, and service
-  alerts from AT's GTFS-Realtime API
-- Writes to Delta Lake with date/hour/route partitioning
+- Collects vehicle positions and trip updates from AT's GTFS-Realtime API
+- Collects versioned GTFS static data (routes, stops, trips, schedules, etc.)
+- Writes to Delta Lake with date/hour/route partitioning (realtime) and
+  validity date (valid_from) partitioning (static)
+- Hourly cleanup job deduplicates and compacts realtime data
+- Daily GTFS static data check using HTTP conditional requests
 - Uses APScheduler for job scheduling
 - MD5-based feed deduplication (skips unchanged responses)
+- Efficient static data change detection via If-Modified-Since/If-None-Match
+  headers
 
 ## Getting Started
 
@@ -43,7 +48,9 @@ Optional settings:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `POLL_INTERVAL_SECONDS` | `30` | Seconds between API requests |
+| `POLL_INTERVAL_SECONDS` | `30` | Seconds between realtime API requests |
+| `STATIC_INGEST_HOUR` | `15` | Hour of day (UTC) to check for static updates |
+| `GTFS_STATIC_URL` | `https://gtfs.at.govt.nz/gtfs.zip` | GTFS static data endpoint |
 | `DATA_PATH` | `data` | Directory for Delta Lake tables |
 
 ### Usage
@@ -72,8 +79,22 @@ $DATA_PATH/
 │       └── feed_hour=14/
 │           └── route_id=123/
 │               └── *.parquet
-└── trip_updates/
-    ├── _delta_log/
+├── trip_updates/
+│   ├── _delta_log/
+│   └── ...
+└── static/
+    ├── static_metadata.json
+    ├── agency/
+    │   ├── _delta_log/
+    │   └── valid_from=20250115/
+    │       └── *.parquet
+    ├── stops/
+    ├── routes/
+    ├── trips/
+    ├── stop_times/
+    ├── calendar/
+    ├── calendar_dates/
+    ├── shapes/
     └── ...
 ```
 
@@ -237,7 +258,8 @@ app/
 ├── cleanup.py          # Hourly deduplication and compaction
 ├── columns.py          # Column definitions, schema builder, dedupe keys
 ├── config.py           # Configuration and environment variables
-├── ingest.py           # Feed fetcher, base class, entity classes
+├── realtime_ingest.py  # Realtime feed fetcher, base class, entity classes
+├── static_ingest.py    # Static data fetcher, base class, entity classes
 ├── logging_config.py   # Logging setup
 └── utils.py            # Utility functions
 tests/
@@ -247,6 +269,8 @@ main.py                 # Entry point
 ```
 
 ### Architecture
+
+#### Realtime Data (GTFS-Realtime)
 
 **CombinedFeedFetcher** handles HTTP requests to the combined feed endpoint,
 MD5-based deduplication, and protobuf decoding.
@@ -258,6 +282,25 @@ MD5-based deduplication, and protobuf decoding.
 
 **Entity classes** (e.g., `VehiclePositions`, `TripUpdates`) implement
 entity-specific parsing logic and write to separate Delta Lake tables.
+
+#### Static Data (GTFS Static)
+
+**GTFSStaticFetcher** handles HTTP requests to the GTFS static endpoint using
+conditional requests (If-Modified-Since, If-None-Match headers) to avoid
+downloading unchanged files.
+
+**StaticDataIngest** is the base class for GTFS static CSV file processors.
+Each subclass defines:
+- Entity name (derives CSV filename and write path)
+- PyArrow schema
+- Partition columns (valid_from)
+- Optional `transform()` method for custom data transformations
+
+**Static entity classes** (AgencyData, StopsData, RoutesData, TripsData,
+StopTimesData, CalendarData, CalendarDatesData, ShapesData, etc.) implement
+file-specific schemas and write versioned data to separate Delta Lake tables
+with `valid_from`, `valid_to`, `feed_version`, and `downloaded_at` columns
+for temporal queries.
 
 ## Development
 

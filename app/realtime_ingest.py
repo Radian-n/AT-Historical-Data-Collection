@@ -27,7 +27,6 @@ from app.config import (
     DATA_PATH,
     STALE_THRESHOLD_MINUTES,
 )
-from app.utils import list_to_json_bytes
 
 
 @dataclass
@@ -228,9 +227,9 @@ class VehiclePositions(Ingest):
             Columns.ENTITY_IS_DELETED,
         ],
         metadata={
-            b"entity": b"vehicle_positions",
-            b"version": b"1",
-            b"partition_columns": list_to_json_bytes(partition_cols),
+            "entity": "vehicle_positions",
+            "version": "1",
+            "partition_columns": partition_cols,
         },
     )
     write_path: Path = DATA_PATH / "vehicle_positions"
@@ -327,9 +326,9 @@ class TripUpdates(Ingest):
             Columns.ENTITY_IS_DELETED,
         ],
         metadata={
-            b"entity": b"trip_updates",
-            b"version": b"1",
-            b"partition_columns": list_to_json_bytes(partition_cols),
+            "entity": "trip_updates",
+            "version": "1",
+            "partition_columns": partition_cols,
         },
     )
     write_path: Path = DATA_PATH / "trip_updates"

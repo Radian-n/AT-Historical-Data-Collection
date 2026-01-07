@@ -25,11 +25,16 @@ STALE_THRESHOLD_MINUTES: Final[int] = 15
 # a buffer to ensure all late-arriving data has been ingested before cleanup.
 CLEANUP_MINUTE: Final[int] = 20
 
+# Hour of day (UTC) to check for GTFS static data updates.
+# Default 15:00 UTC = 3:00am NZST (4:00am NZDT during daylight saving).
+STATIC_INGEST_HOUR: Final[int] = int(os.getenv("STATIC_INGEST_HOUR", "15"))
+
 # API
 AT_API_KEY: Final[str] = os.getenv("AT_API_KEY", "")
 if not AT_API_KEY:
     raise RuntimeError("AT_API_KEY not set")
 
+GTFS_STATIC_URL = "https://gtfs.at.govt.nz/gtfs.zip"
 
 # Storage
 DATA_PATH: Final[Path] = Path("data")

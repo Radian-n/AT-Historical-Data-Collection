@@ -230,7 +230,7 @@ def cleanup_trip_updates_hour(
     # For rows that have both (rare), both will be populated from same row.
     # For shared fields, we take the latest values (MAX).
     #
-    # Column order matches TripUpdates schema in ingest.py.
+    # Column order matches TripUpdates schema in realtime_ingest.py.
     query: str = f"""
         SELECT
             -- Timestamps
