@@ -23,28 +23,38 @@ VEHICLE_POSITIONS_TEST_SCHEMA = make_schema(
         Columns.FEED_TIMESTAMP,
         Columns.VEHICLE_ID,
         Columns.ROUTE_ID,
+        Columns.START_DATE,
         Columns.LATITUDE,
         Columns.LONGITUDE,
-        Columns.FEED_DATE,
-        Columns.FEED_HOUR,
     ]
 )
 
-# Schema for trip updates tests (includes arrival/departure columns for merge)
+# Schema for trip updates tests (trip-level data)
 TRIP_UPDATES_TEST_SCHEMA = make_schema(
     [
         Columns.POLL_TIME,
         Columns.FEED_TIMESTAMP,
-        Columns.VEHICLE_ID,
-        Columns.LABEL,
-        Columns.LICENSE_PLATE,
         Columns.TRIP_ID,
         Columns.ROUTE_ID,
         Columns.DIRECTION_ID,
         Columns.SCHEDULE_RELATIONSHIP,
         Columns.START_DATE,
         Columns.START_TIME,
-        Columns.DELAY,
+        Columns.VEHICLE_ID,
+        Columns.LABEL,
+        Columns.LICENSE_PLATE,
+        Columns.ENTITY_IS_DELETED,
+    ]
+)
+
+# Schema for stop time updates tests (includes arrival/departure for merge)
+STOP_TIME_UPDATES_TEST_SCHEMA = make_schema(
+    [
+        Columns.POLL_TIME,
+        Columns.FEED_TIMESTAMP,
+        Columns.TRIP_ID,
+        Columns.START_DATE,
+        Columns.ROUTE_ID,
         Columns.STOP_SEQUENCE,
         Columns.STOP_ID,
         Columns.STOP_SCHEDULE_RELATIONSHIP,
@@ -54,9 +64,6 @@ TRIP_UPDATES_TEST_SCHEMA = make_schema(
         Columns.DEPARTURE_DELAY,
         Columns.DEPARTURE_TIME,
         Columns.DEPARTURE_UNCERTAINTY,
-        Columns.ENTITY_IS_DELETED,
-        Columns.FEED_DATE,
-        Columns.FEED_HOUR,
     ]
 )
 
@@ -78,10 +85,9 @@ def sample_vehicle_positions_data() -> list[dict]:
             Columns.FEED_TIMESTAMP: feed_ts,
             Columns.VEHICLE_ID: "vehicle_A",
             Columns.ROUTE_ID: "route_1",
+            Columns.START_DATE: "20260101",
             Columns.LATITUDE: -36.8485,
             Columns.LONGITUDE: 174.7633,
-            Columns.FEED_DATE: "2026-01-02",
-            Columns.FEED_HOUR: 10,
         },
         # Duplicate of vehicle A (same vehicle_id + feed_timestamp)
         {
@@ -91,10 +97,9 @@ def sample_vehicle_positions_data() -> list[dict]:
             Columns.FEED_TIMESTAMP: feed_ts,
             Columns.VEHICLE_ID: "vehicle_A",
             Columns.ROUTE_ID: "route_1",
+            Columns.START_DATE: "20260101",
             Columns.LATITUDE: -36.8485,
             Columns.LONGITUDE: 174.7633,
-            Columns.FEED_DATE: "2026-01-02",
-            Columns.FEED_HOUR: 10,
         },
         # First observation of vehicle B
         {
@@ -102,10 +107,9 @@ def sample_vehicle_positions_data() -> list[dict]:
             Columns.FEED_TIMESTAMP: feed_ts,
             Columns.VEHICLE_ID: "vehicle_B",
             Columns.ROUTE_ID: "route_2",
+            Columns.START_DATE: "20260101",
             Columns.LATITUDE: -36.8500,
             Columns.LONGITUDE: 174.7650,
-            Columns.FEED_DATE: "2026-01-02",
-            Columns.FEED_HOUR: 10,
         },
         # Duplicate of vehicle B
         {
@@ -115,17 +119,16 @@ def sample_vehicle_positions_data() -> list[dict]:
             Columns.FEED_TIMESTAMP: feed_ts,
             Columns.VEHICLE_ID: "vehicle_B",
             Columns.ROUTE_ID: "route_2",
+            Columns.START_DATE: "20260101",
             Columns.LATITUDE: -36.8500,
             Columns.LONGITUDE: 174.7650,
-            Columns.FEED_DATE: "2026-01-02",
-            Columns.FEED_HOUR: 10,
         },
     ]
 
 
 @pytest.fixture
-def sample_trip_updates_data() -> list[dict]:
-    """Sample trip updates data with separate arrival/departure rows.
+def sample_stop_time_updates_data() -> list[dict]:
+    """Sample stop time updates data with separate arrival/departure rows.
 
     Contains 4 rows representing 2 stops, each with separate arrival and
     departure observations. After merge, should result in 2 rows with both
@@ -136,18 +139,8 @@ def sample_trip_updates_data() -> list[dict]:
 
     # Base row data shared by all rows
     base: dict[str, Any] = {
-        Columns.VEHICLE_ID: "vehicle_1",
-        Columns.LABEL: "BUS001",
-        Columns.LICENSE_PLATE: "ABC123",
         Columns.ROUTE_ID: "route_1",
-        Columns.DIRECTION_ID: 0,
-        Columns.SCHEDULE_RELATIONSHIP: 0,
-        Columns.START_TIME: "10:00:00",
-        Columns.DELAY: 60,
         Columns.STOP_SCHEDULE_RELATIONSHIP: 0,
-        Columns.ENTITY_IS_DELETED: False,
-        Columns.FEED_DATE: "2026-01-02",
-        Columns.FEED_HOUR: 10,
     }
 
     return [
@@ -157,7 +150,7 @@ def sample_trip_updates_data() -> list[dict]:
             Columns.POLL_TIME: arrival_ts,
             Columns.FEED_TIMESTAMP: arrival_ts,
             Columns.TRIP_ID: "trip_A",
-            Columns.START_DATE: "20260102",
+            Columns.START_DATE: "20260101",
             Columns.STOP_SEQUENCE: 1,
             Columns.STOP_ID: "stop_100",
             Columns.ARRIVAL_DELAY: 30,
@@ -173,7 +166,7 @@ def sample_trip_updates_data() -> list[dict]:
             Columns.POLL_TIME: departure_ts,
             Columns.FEED_TIMESTAMP: departure_ts,
             Columns.TRIP_ID: "trip_A",
-            Columns.START_DATE: "20260102",
+            Columns.START_DATE: "20260101",
             Columns.STOP_SEQUENCE: 1,
             Columns.STOP_ID: "stop_100",
             Columns.ARRIVAL_DELAY: None,
@@ -189,7 +182,7 @@ def sample_trip_updates_data() -> list[dict]:
             Columns.POLL_TIME: arrival_ts,
             Columns.FEED_TIMESTAMP: arrival_ts,
             Columns.TRIP_ID: "trip_A",
-            Columns.START_DATE: "20260102",
+            Columns.START_DATE: "20260101",
             Columns.STOP_SEQUENCE: 2,
             Columns.STOP_ID: "stop_200",
             Columns.ARRIVAL_DELAY: 60,
@@ -205,7 +198,7 @@ def sample_trip_updates_data() -> list[dict]:
             Columns.POLL_TIME: departure_ts,
             Columns.FEED_TIMESTAMP: departure_ts,
             Columns.TRIP_ID: "trip_A",
-            Columns.START_DATE: "20260102",
+            Columns.START_DATE: "20260101",
             Columns.STOP_SEQUENCE: 2,
             Columns.STOP_ID: "stop_200",
             Columns.ARRIVAL_DELAY: None,
