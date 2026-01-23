@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app.cleanup import cleanup_all
@@ -20,6 +22,7 @@ def main() -> None:
         "interval",
         seconds=POLL_INTERVAL_SECONDS,
         misfire_grace_time=POLL_INTERVAL_SECONDS,
+        next_run_time=datetime.now(),
     )
 
     # Daily cleanup (dedupe + compact previous day's data)
@@ -28,6 +31,7 @@ def main() -> None:
         cleanup_all,
         "cron",
         minute=CLEANUP_MINUTE,
+        next_run_time=datetime.now(),
     )
 
     # Daily GTFS static data check
@@ -36,6 +40,7 @@ def main() -> None:
         "cron",
         hour=STATIC_INGEST_HOUR,
         minute=0,
+        next_run_time=datetime.now(),
     )
 
     try:
