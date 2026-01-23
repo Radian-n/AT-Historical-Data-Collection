@@ -5,9 +5,10 @@ in Delta Lake tables for historical analysis.
 
 ## Features
 
-- Collects vehicle positions, trip updates, ferry positions, and service
-  alerts from AT's GTFS-Realtime API
-- Writes to Delta Lake with date/hour/route partitioning
+- Collects vehicle positions, trip updates, and stop time updates from AT's
+  GTFS-Realtime API
+- Writes to Delta Lake with (start_date, route_id) partitioning
+- Daily cleanup job deduplicates and compacts data
 - Uses APScheduler for job scheduling
 - MD5-based feed deduplication (skips unchanged responses)
 
@@ -53,8 +54,8 @@ uv run python main.py
 ```
 
 The application runs continuously, polling the API on a schedule and writing
-to Delta Lake tables. Every hour, a clean up task will de-duplicate and compact
-the Delta Lake tables for final storage.
+to Delta Lake tables. A daily cleanup task deduplicates and compacts each
+day's data.
 
 ## Data Storage
 
@@ -68,13 +69,17 @@ storage location is configured via the `DATA_PATH` environment variable
 $DATA_PATH/
 ├── vehicle_positions/
 │   ├── _delta_log/
-│   └── feed_date=2025-01-15/
-│       └── feed_hour=14/
-│           └── route_id=123/
-│               └── *.parquet
-└── trip_updates/
+│   └── start_date=20250115/
+│       └── route_id=123/
+│           └── *.parquet
+├── trip_updates/
+│   ├── _delta_log/
+│   └── start_date=20250115/
+│       └── ...
+└── stop_time_updates/
     ├── _delta_log/
-    └── ...
+    └── start_date=20250115/
+        └── ...
 ```
 
 ### Why Delta Lake?
@@ -89,22 +94,21 @@ Delta Lake is a storage layer on top of Parquet that adds:
 
 ### Data Cleanup
 
-An hourly cleanup job runs at minute 20 of each hour to process the previous
-hour's data. The 20-minute delay allows for late-arriving data (the AT API
-can return up to ~50% stale data that may belong to the previous hour).
+A daily cleanup job runs hourly (at minute 20) targeting the previous day's
+data. Running hourly ensures cleanup happens soon after midnight while
+remaining idempotent.
 
 The cleanup job:
 
-1. **Deduplicates rows** - Rows with identical dedupe keys are consolidated,
-   keeping one row per unique key combination.
-2. **Compacts files** - The deduplicated data is written as a new parquet
-   file, replacing the many small files created during ingestion. The old
-   files are marked as unreferenced in Delta Lake's transaction log.
-3. **Vacuums** - Physically deletes the unreferenced files from disk. Without
-   this step, old files would accumulate indefinitely (Delta Lake retains
-   them by default to support time travel queries).
+1. **Deduplicates rows** - Rows with identical dedupe keys are consolidated.
+   For vehicle_positions: one row per (vehicle_id, feed_timestamp).
+   For trip_updates: one row per (trip_id, start_date), keeping the latest.
+   For stop_time_updates: merges separate arrival/departure observations.
+2. **Compacts files** - The deduplicated data is written as a single parquet
+   file per partition, replacing the many small files created during ingestion.
+3. **Vacuums** - Physically deletes unreferenced files from disk.
 
-Until cleanup runs for a given hour, expect temporary duplicates and many
+Until cleanup runs for a given day, expect temporary duplicates and many
 small files.
 
 ## Data Dictionary
@@ -116,7 +120,7 @@ One row per vehicle position update.
 | Column | Type | Description |
 |--------|------|-------------|
 | `poll_time` | timestamp(s, UTC) | When the API was polled |
-| `feed_timestamp` | timestamp(s, UTC) | Timestamp from the vehicle position |
+| `feed_timestamp` | timestamp(s, UTC) | Timestamp from the vehicle |
 | `vehicle_id` | string | Unique vehicle identifier |
 | `label` | string | Vehicle label (e.g., fleet number) |
 | `license_plate` | string | Vehicle license plate |
@@ -124,7 +128,7 @@ One row per vehicle position update.
 | `route_id` | string | GTFS route identifier |
 | `direction_id` | int32 | Direction of travel (0 or 1) |
 | `schedule_relationship` | int32 | Trip schedule status |
-| `start_date` | string | Trip start date (YYYYMMDD) |
+| `start_date` | string | Trip start date (YYYYMMDD, "UNKNOWN" if no trip) |
 | `start_time` | string | Trip start time (HH:MM:SS) |
 | `latitude` | float64 | Vehicle latitude |
 | `longitude` | float64 | Vehicle longitude |
@@ -133,47 +137,58 @@ One row per vehicle position update.
 | `odometer` | float64 | Odometer reading (metres) |
 | `occupancy_status` | int32 | Vehicle occupancy level |
 | `entity_is_deleted` | bool | Whether entity was marked deleted |
-| `feed_date` | string | Derived: date for partitioning |
-| `feed_hour` | int32 | Derived: hour for partitioning |
 
 **Dedupe key:** `(vehicle_id, feed_timestamp)`
 
-**Partitioned by:** `(feed_date, feed_hour, route_id)`
+**Partitioned by:** `(start_date, route_id)`
 
 ### trip_updates
 
-One row per stop time update. Denormalized with trip and vehicle info.
+One row per trip. Captures trip-level status (especially cancellations).
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `poll_time` | timestamp(s, UTC) | When the API was polled |
 | `feed_timestamp` | timestamp(s, UTC) | Timestamp from the trip update |
-| `vehicle_id` | string | Vehicle identifier |
-| `label` | string | Vehicle label |
-| `license_plate` | string | Vehicle license plate |
 | `trip_id` | string | GTFS trip identifier |
 | `route_id` | string | GTFS route identifier |
 | `direction_id` | int32 | Direction of travel (0 or 1) |
-| `schedule_relationship` | int32 | Trip schedule status |
+| `schedule_relationship` | int32 | Trip schedule status (CANCELED, etc.) |
 | `start_date` | string | Trip start date (YYYYMMDD) |
 | `start_time` | string | Trip start time (HH:MM:SS) |
-| `delay` | int32 | Trip-level delay in seconds |
+| `vehicle_id` | string | Assigned vehicle identifier |
+| `label` | string | Vehicle label |
+| `license_plate` | string | Vehicle license plate |
+| `entity_is_deleted` | bool | Whether entity was marked deleted |
+
+**Dedupe key:** `(trip_id, start_date)` - keeps latest feed_timestamp
+
+**Partitioned by:** `(start_date, route_id)`
+
+### stop_time_updates
+
+One row per stop per trip. Arrival and departure data merged during cleanup.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `poll_time` | timestamp(s, UTC) | When the API was polled |
+| `feed_timestamp` | timestamp(s, UTC) | Timestamp from the trip update |
+| `trip_id` | string | GTFS trip identifier |
+| `start_date` | string | Trip start date (YYYYMMDD) |
+| `route_id` | string | GTFS route identifier |
 | `stop_sequence` | int32 | Order of stop in trip |
 | `stop_id` | string | GTFS stop identifier |
-| `stop_schedule_relationship` | int32 | Stop status (SCHEDULED, SKIPPED, etc.) |
+| `stop_schedule_relationship` | int32 | Stop status (SCHEDULED, SKIPPED) |
 | `arrival_delay` | int32 | Arrival delay in seconds (negative = early) |
-| `arrival_time` | int64 | Predicted/actual arrival time (Unix timestamp) |
-| `arrival_uncertainty` | int32 | Arrival prediction uncertainty |
+| `arrival_time` | int64 | Actual arrival time (Unix timestamp) |
+| `arrival_uncertainty` | int32 | Arrival uncertainty (0 = confirmed) |
 | `departure_delay` | int32 | Departure delay in seconds |
-| `departure_time` | int64 | Predicted/actual departure time (Unix timestamp) |
-| `departure_uncertainty` | int32 | Departure prediction uncertainty |
-| `entity_is_deleted` | bool | Whether entity was marked deleted |
-| `feed_date` | string | Derived: date for partitioning |
-| `feed_hour` | int32 | Derived: hour for partitioning |
+| `departure_time` | int64 | Actual departure time (Unix timestamp) |
+| `departure_uncertainty` | int32 | Departure uncertainty (0 = confirmed) |
 
-**Dedupe key:** `(trip_id, start_date, stop_sequence, feed_timestamp)`
+**Dedupe key:** `(trip_id, start_date, stop_sequence)` - merges arrival/departure
 
-**Partitioned by:** `(feed_date, feed_hour, route_id)`
+**Partitioned by:** `(start_date, route_id)`
 
 ## Reading the Data
 
@@ -186,10 +201,9 @@ directly with any Parquet-compatible tool.
 import duckdb
 
 # Use glob patterns to target specific partitions, reducing I/O.
-# Select only the columns you need for faster reads.
 duckdb.sql("""
     SELECT vehicle_id, latitude, longitude
-    FROM read_parquet('data/vehicle_positions/feed_date=2025-01-15/**/*.parquet')
+    FROM read_parquet('data/vehicle_positions/start_date=20250115/**/*.parquet')
 """)
 ```
 
@@ -198,12 +212,10 @@ duckdb.sql("""
 ```python
 import polars as pl
 
-# scan_parquet is lazy - filters and column selection are pushed down,
-# so only matching partitions and requested columns are read from disk.
+# scan_parquet is lazy - filters and column selection are pushed down.
 df = (
     pl.scan_parquet("data/vehicle_positions/**/route_id=101/*.parquet")
     .select(["vehicle_id", "latitude", "longitude", "feed_timestamp"])
-    .filter(pl.col("feed_hour") == 14)
     .collect()
 )
 ```
@@ -215,7 +227,7 @@ import pandas as pd
 
 # Read a specific partition with selected columns.
 df = pd.read_parquet(
-    "data/vehicle_positions/feed_date=2025-01-15/feed_hour=14",
+    "data/vehicle_positions/start_date=20250115/route_id=101",
     columns=["vehicle_id", "latitude", "longitude"],
 )
 ```
@@ -234,7 +246,7 @@ entity types in a single response.
 
 ```
 app/
-├── cleanup.py          # Hourly deduplication and compaction
+├── cleanup.py          # Daily deduplication and compaction
 ├── columns.py          # Column definitions, schema builder, dedupe keys
 ├── config.py           # Configuration and environment variables
 ├── ingest.py           # Feed fetcher, base class, entity classes
@@ -256,8 +268,9 @@ MD5-based deduplication, and protobuf decoding.
 - Partition columns
 - `normalise()` method to parse protobuf entities into rows
 
-**Entity classes** (e.g., `VehiclePositions`, `TripUpdates`) implement
-entity-specific parsing logic and write to separate Delta Lake tables.
+**Entity classes** (`VehiclePositions`, `TripUpdates`, `StopTimeUpdates`)
+implement entity-specific parsing logic and write to separate Delta Lake
+tables.
 
 ## Development
 
