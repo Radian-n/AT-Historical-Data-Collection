@@ -22,7 +22,8 @@ def main() -> None:
         misfire_grace_time=POLL_INTERVAL_SECONDS,
     )
 
-    # Hourly cleanup (dedupe + compact previous hour)
+    # Daily cleanup (dedupe + compact previous day's data)
+    # Runs hourly but targets the previous day; idempotent so safe to run often
     scheduler.add_job(
         cleanup_all,
         "cron",

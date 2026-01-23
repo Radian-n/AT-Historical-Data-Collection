@@ -43,3 +43,4 @@ DATA_PATH: Final[Path] = Path("data")
 class Tables(StrEnum):
     VEHICLE_POSITIONS = "vehicle_positions"
     TRIP_UPDATES = "trip_updates"
+    STOP_TIME_UPDATES = "stop_time_updates"
