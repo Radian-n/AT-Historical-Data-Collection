@@ -1,7 +1,7 @@
-"""Hourly cleanup: deduplication and compaction of Delta Lake tables.
+"""Daily cleanup: deduplication and compaction of Delta Lake tables.
 
-Runs after each hour to deduplicate and compact the small parquet files
-written during that hour into fewer, larger files.
+Runs daily to deduplicate and compact the small parquet files
+written during that day into fewer, larger files.
 """
 
 import logging
@@ -14,10 +14,15 @@ import duckdb
 import pyarrow as pa
 from deltalake import DeltaTable, write_deltalake
 
-from app.columns import VEHICLE_POSITIONS_DEDUPE_KEYS, Columns
+from app.columns import (
+    STOP_TIME_UPDATES_DEDUPE_KEYS,
+    TRIP_UPDATES_DEDUPE_KEYS,
+    VEHICLE_POSITIONS_DEDUPE_KEYS,
+    Columns,
+)
 from app.config import DATA_PATH, Tables
 
-log: Logger = logging.getLogger("HourlyCleanup")
+log: Logger = logging.getLogger("DailyCleanup")
 
 
 @dataclass
@@ -25,35 +30,34 @@ class TargetPartition:
     """Target partition for cleanup operations.
 
     Attributes:
-        feed_date: Date string in YYYY-MM-DD format.
-        feed_hour: Hour of day (0-23).
+        start_date: Date string in YYYYMMDD format (NZ operational day).
         predicate: SQL predicate for partition filtering.
     """
 
-    feed_date: str
-    feed_hour: int
+    start_date: str
     predicate: str
 
 
 def _get_target_partition(now: datetime) -> TargetPartition:
-    """Calculate the target partition for cleanup (previous hour).
+    """Calculate the target partition for cleanup (previous day).
+
+    Uses NZ timezone to determine the operational day boundary.
+    Cleanup runs after midnight UTC, targeting the previous NZ day.
 
     Args:
-        now: Current time.
+        now: Current time (UTC).
 
     Returns:
-        TargetPartition with date, hour, and SQL predicate.
+        TargetPartition with start_date and SQL predicate.
     """
+    # Target the previous day's data
     target: datetime = now.replace(
-        minute=0, second=0, microsecond=0
-    ) - timedelta(hours=1)
-    feed_date: str = target.strftime("%Y-%m-%d")
-    feed_hour: int = target.hour
-    predicate: str = (
-        f"{Columns.FEED_DATE} = '{feed_date}' "
-        f"AND {Columns.FEED_HOUR} = {feed_hour}"
-    )
-    return TargetPartition(feed_date, feed_hour, predicate)
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(days=1)
+    # GTFS start_date format is YYYYMMDD (no dashes)
+    start_date: str = target.strftime("%Y%m%d")
+    predicate: str = f"{Columns.START_DATE} = '{start_date}'"
+    return TargetPartition(start_date, predicate)
 
 
 def _write_and_vacuum(
@@ -90,24 +94,23 @@ def _write_and_vacuum(
     )
 
     log.info(
-        "Cleaned %s %s hour %d: %d rows, %d files vacuumed",
+        "Cleaned %s %s: %d rows, %d files vacuumed",
         table_name,
-        partition.feed_date,
-        partition.feed_hour,
+        partition.start_date,
         data.num_rows,
         len(vacuumed_files),
     )
 
 
-def cleanup_hour(
+def cleanup_day(
     table_name: str,
     dedupe_keys: tuple[Columns, ...],
     now: datetime | None = None,
     data_path: Path | None = None,
 ) -> None:
-    """Deduplicate and compact a completed hour's data.
+    """Deduplicate and compact a completed day's data.
 
-    Targets the previous hour's partition, deduplicates rows using the
+    Targets the previous day's partition, deduplicates rows using the
     specified keys (keeping one row per unique key combination), rewrites
     the partition as a single compacted file, and vacuums old versions.
 
@@ -139,7 +142,7 @@ def cleanup_hour(
     # Deduplication query using DuckDB:
     #
     # 1. delta_scan() reads the Delta Lake table with predicate pushdown
-    # 2. WHERE clause filters to only the target hour's partition
+    # 2. WHERE clause filters to only the target day's partition
     # 3. ROW_NUMBER() assigns a sequence within each group of duplicates
     #    (grouped by dedupe_keys). No ORDER BY is needed because rows with
     #    identical dedupe keys have identical data - duplicates arise from
@@ -151,8 +154,7 @@ def cleanup_hour(
             SELECT *,
                 ROW_NUMBER() OVER (PARTITION BY {key_cols}) as rn
             FROM delta_scan('{local_path}')
-            WHERE {Columns.FEED_DATE} = '{partition.feed_date}'
-                AND {Columns.FEED_HOUR} = {partition.feed_hour}
+            WHERE {Columns.START_DATE} = '{partition.start_date}'
         )
         WHERE rn = 1
     """
@@ -161,10 +163,9 @@ def cleanup_hour(
 
     if deduped.num_rows == 0:
         log.info(
-            "No data for %s %s hour %d, skipping",
+            "No data for %s %s, skipping",
             table_name,
-            partition.feed_date,
-            partition.feed_hour,
+            partition.start_date,
         )
         return
 
@@ -173,16 +174,16 @@ def cleanup_hour(
     )
 
 
-def cleanup_trip_updates_hour(
+def cleanup_stop_time_updates_day(
     now: datetime | None = None,
     data_path: Path | None = None,
 ) -> None:
-    """Merge arrival/departure rows and compact trip updates.
+    """Merge arrival/departure rows and compact stop time updates.
 
-    Unlike vehicle positions which just deduplicates, trip updates require
-    merging arrival and departure rows for the same stop. A vehicle arriving
-    and departing at a stop may be recorded as separate rows (different
-    feed_timestamps), and this function merges them into a single row.
+    Unlike vehicle positions which just deduplicates, stop time updates
+    require merging arrival and departure rows for the same stop. A vehicle
+    arriving and departing at a stop may be recorded as separate rows
+    (different feed_timestamps), and this function merges them into one row.
 
     The merge logic:
     - Groups by (trip_id, start_date, stop_sequence, stop_id)
@@ -207,11 +208,12 @@ def cleanup_trip_updates_hour(
     if data_path is None:
         data_path = DATA_PATH
 
-    local_path: Path = data_path / Tables.TRIP_UPDATES
+    local_path: Path = data_path / Tables.STOP_TIME_UPDATES
 
     if not local_path.exists():
         log.warning(
-            "Table %s does not exist, skipping cleanup", Tables.TRIP_UPDATES
+            "Table %s does not exist, skipping cleanup",
+            Tables.STOP_TIME_UPDATES,
         )
         return
 
@@ -230,24 +232,16 @@ def cleanup_trip_updates_hour(
     # For rows that have both (rare), both will be populated from same row.
     # For shared fields, we take the latest values (MAX).
     #
-    # Column order matches TripUpdates schema in ingest.py.
+    # Column order matches StopTimeUpdates schema in ingest.py.
     query: str = f"""
         SELECT
             -- Timestamps
             MAX({Columns.POLL_TIME}) as {Columns.POLL_TIME},
             MAX({Columns.FEED_TIMESTAMP}) as {Columns.FEED_TIMESTAMP},
-            -- Vehicle details
-            MAX({Columns.VEHICLE_ID}) as {Columns.VEHICLE_ID},
-            MAX({Columns.LABEL}) as {Columns.LABEL},
-            MAX({Columns.LICENSE_PLATE}) as {Columns.LICENSE_PLATE},
-            -- Trip/route info
+            -- FK columns
             {Columns.TRIP_ID},
-            MAX({Columns.ROUTE_ID}) as {Columns.ROUTE_ID},
-            MAX({Columns.DIRECTION_ID}) as {Columns.DIRECTION_ID},
-            MAX({Columns.SCHEDULE_RELATIONSHIP}) as {Columns.SCHEDULE_RELATIONSHIP},
             {Columns.START_DATE},
-            MAX({Columns.START_TIME}) as {Columns.START_TIME},
-            MAX({Columns.DELAY}) as {Columns.DELAY},
+            MAX({Columns.ROUTE_ID}) as {Columns.ROUTE_ID},
             -- Stop update data
             {Columns.STOP_SEQUENCE},
             {Columns.STOP_ID},
@@ -272,40 +266,98 @@ def cleanup_trip_updates_hour(
             MAX(CASE WHEN {Columns.DEPARTURE_TIME} IS NOT NULL
                       AND {Columns.DEPARTURE_UNCERTAINTY} = 0
                 THEN {Columns.DEPARTURE_UNCERTAINTY} END)
-                as {Columns.DEPARTURE_UNCERTAINTY},
-            MAX({Columns.ENTITY_IS_DELETED}) as {Columns.ENTITY_IS_DELETED},
-            -- Partition columns
-            {Columns.FEED_DATE},
-            {Columns.FEED_HOUR}
+                as {Columns.DEPARTURE_UNCERTAINTY}
         FROM delta_scan('{local_path}')
-        WHERE {Columns.FEED_DATE} = '{partition.feed_date}'
-            AND {Columns.FEED_HOUR} = {partition.feed_hour}
+        WHERE {Columns.START_DATE} = '{partition.start_date}'
         GROUP BY {Columns.TRIP_ID}, {Columns.START_DATE},
-                 {Columns.STOP_SEQUENCE}, {Columns.STOP_ID},
-                 {Columns.FEED_DATE}, {Columns.FEED_HOUR}
+                 {Columns.STOP_SEQUENCE}, {Columns.STOP_ID}
     """
 
     merged: pa.Table = duckdb.sql(query).fetch_arrow_table()
 
     if merged.num_rows == 0:
         log.info(
-            "No data for %s %s hour %d, skipping",
-            Tables.TRIP_UPDATES,
-            partition.feed_date,
-            partition.feed_hour,
+            "No data for %s %s, skipping",
+            Tables.STOP_TIME_UPDATES,
+            partition.start_date,
         )
         return
 
     _write_and_vacuum(
-        local_path, merged, partition, partition_cols, Tables.TRIP_UPDATES
+        local_path, merged, partition, partition_cols, Tables.STOP_TIME_UPDATES
+    )
+
+
+def cleanup_trip_updates_day(
+    now: datetime | None = None,
+    data_path: Path | None = None,
+) -> None:
+    """Deduplicate trip updates, keeping only the latest observation per trip.
+
+    For the trip_updates table, we want to keep one row per (trip_id,
+    start_date) with the latest feed_timestamp. This preserves the final
+    known state of each trip (especially important for cancellations).
+
+    Args:
+        now: Current time (for testability). Defaults to UTC now.
+        data_path: Base path for tables (for testability). Defaults to
+            DATA_PATH from config.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if data_path is None:
+        data_path = DATA_PATH
+
+    local_path: Path = data_path / Tables.TRIP_UPDATES
+
+    if not local_path.exists():
+        log.warning(
+            "Table %s does not exist, skipping cleanup", Tables.TRIP_UPDATES
+        )
+        return
+
+    # Load table and read partition columns from metadata
+    dt = DeltaTable(local_path)
+    partition_cols: list[str] = dt.metadata().partition_columns
+
+    partition: TargetPartition = _get_target_partition(now)
+    key_cols: str = ", ".join(str(k) for k in TRIP_UPDATES_DEDUPE_KEYS)
+
+    # Keep only the latest observation per (trip_id, start_date).
+    # ORDER BY feed_timestamp DESC ensures we keep the most recent state.
+    query: str = f"""
+        SELECT * EXCLUDE (rn) FROM (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY {key_cols}
+                    ORDER BY {Columns.FEED_TIMESTAMP} DESC
+                ) as rn
+            FROM delta_scan('{local_path}')
+            WHERE {Columns.START_DATE} = '{partition.start_date}'
+        )
+        WHERE rn = 1
+    """
+
+    deduped: pa.Table = duckdb.sql(query).fetch_arrow_table()
+
+    if deduped.num_rows == 0:
+        log.info(
+            "No data for %s %s, skipping",
+            Tables.TRIP_UPDATES,
+            partition.start_date,
+        )
+        return
+
+    _write_and_vacuum(
+        local_path, deduped, partition, partition_cols, Tables.TRIP_UPDATES
     )
 
 
 def cleanup_vehicle_positions(
     now: datetime | None = None, data_path: Path | None = None
 ) -> None:
-    """Cleanup vehicle_positions table for the previous hour."""
-    cleanup_hour(
+    """Cleanup vehicle_positions table for the previous day."""
+    cleanup_day(
         table_name=Tables.VEHICLE_POSITIONS,
         dedupe_keys=VEHICLE_POSITIONS_DEDUPE_KEYS,
         now=now,
@@ -316,14 +368,19 @@ def cleanup_vehicle_positions(
 def cleanup_trip_updates(
     now: datetime | None = None, data_path: Path | None = None
 ) -> None:
-    """Cleanup trip_updates table for the previous hour."""
-    cleanup_trip_updates_hour(now=now, data_path=data_path)
-    # TODO: Join with current GTFS Static data to fill in missing rows?
-    # arrival and departure time columns become SCHEDULED, rather than actual.
-    # actual times can be derived from this.
+    """Cleanup trip_updates table for the previous day."""
+    cleanup_trip_updates_day(now=now, data_path=data_path)
+
+
+def cleanup_stop_time_updates(
+    now: datetime | None = None, data_path: Path | None = None
+) -> None:
+    """Cleanup stop_time_updates table for the previous day."""
+    cleanup_stop_time_updates_day(now=now, data_path=data_path)
 
 
 def cleanup_all(now: datetime | None = None) -> None:
-    """Cleanup all tables for the previous hour."""
+    """Cleanup all tables for the previous day."""
     cleanup_vehicle_positions(now=now)
     cleanup_trip_updates(now=now)
+    cleanup_stop_time_updates(now=now)
