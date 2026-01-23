@@ -50,10 +50,6 @@ class Columns(StrEnum):
     ARRIVAL_TIME = "arrival_time"
     ARRIVAL_UNCERTAINTY = "arrival_uncertainty"
 
-    # Derived columns (computed in add_derived_columns)
-    FEED_DATE = "feed_date"
-    FEED_HOUR = "feed_hour"
-
 
 # Dedupe keys for each entity type.
 # Used during hourly cleanup to identify duplicate records.
@@ -64,11 +60,19 @@ VEHICLE_POSITIONS_DEDUPE_KEYS: tuple[Columns, ...] = (
     Columns.FEED_TIMESTAMP,
 )
 
+# For trip_updates table: keep one row per (trip_id, start_date)
+# with the latest feed_timestamp observation.
 TRIP_UPDATES_DEDUPE_KEYS: tuple[Columns, ...] = (
     Columns.TRIP_ID,
     Columns.START_DATE,
+)
+
+# For stop_time_updates table: keep one row per
+# (trip_id, start_date, stop_sequence) after merging arrival/departure.
+STOP_TIME_UPDATES_DEDUPE_KEYS: tuple[Columns, ...] = (
+    Columns.TRIP_ID,
+    Columns.START_DATE,
     Columns.STOP_SEQUENCE,
-    Columns.FEED_TIMESTAMP,
 )
 
 
@@ -107,9 +111,6 @@ FIELD_TYPES: dict[Columns, pa.DataType] = {
     Columns.ARRIVAL_DELAY: pa.int32(),
     Columns.ARRIVAL_TIME: pa.timestamp("s", tz="+00:00"),
     Columns.ARRIVAL_UNCERTAINTY: pa.int32(),
-    # Derived columns
-    Columns.FEED_DATE: pa.string(),
-    Columns.FEED_HOUR: pa.int32(),
 }
 
 
