@@ -20,13 +20,12 @@ from deltalake import write_deltalake
 from google.transit import gtfs_realtime_pb2
 from requests.models import Response
 
-from app.columns import Columns, make_schema
+from app.columns import Columns, make_schema, REALTIME_FIELD_TYPES
 from app.config import (
     AT_API_KEY,
     DATA_PATH,
     STALE_THRESHOLD_MINUTES,
 )
-from app.utils import list_to_json_bytes
 
 
 @dataclass
@@ -202,7 +201,7 @@ class VehiclePositions(Ingest):
         Columns.ROUTE_ID,
     ]
     schema = make_schema(
-        [
+        columns=[
             # Timestamps
             Columns.POLL_TIME,
             Columns.FEED_TIMESTAMP,
@@ -226,10 +225,12 @@ class VehiclePositions(Ingest):
             Columns.OCCUPANCY_STATUS,
             Columns.ENTITY_IS_DELETED,
         ],
+        field_types=REALTIME_FIELD_TYPES,
         metadata={
-            b"entity": b"vehicle_positions",
-            b"version": b"2",
-            b"partition_columns": list_to_json_bytes(partition_cols),
+            "entity": "vehicle_positions",
+            "version": "1",
+            "partition_columns": partition_cols,
+
         },
     )
     write_path: Path = DATA_PATH / "vehicle_positions"
@@ -307,7 +308,7 @@ class TripUpdates(Ingest):
         Columns.ROUTE_ID,
     ]
     schema = make_schema(
-        [
+        columns=[
             # Timestamps
             Columns.POLL_TIME,
             Columns.FEED_TIMESTAMP,
@@ -324,10 +325,11 @@ class TripUpdates(Ingest):
             Columns.LICENSE_PLATE,
             Columns.ENTITY_IS_DELETED,
         ],
+        field_types=REALTIME_FIELD_TYPES,
         metadata={
-            b"entity": b"trip_updates",
-            b"version": b"2",
-            b"partition_columns": list_to_json_bytes(partition_cols),
+            "entity": "trip_updates",
+            "version": "1",
+            "partition_columns": partition_cols,
         },
     )
     write_path: Path = DATA_PATH / "trip_updates"
@@ -416,10 +418,11 @@ class StopTimeUpdates(Ingest):
             Columns.DEPARTURE_TIME,
             Columns.DEPARTURE_UNCERTAINTY,
         ],
+        field_types=REALTIME_FIELD_TYPES,
         metadata={
-            b"entity": b"stop_time_updates",
-            b"version": b"1",
-            b"partition_columns": list_to_json_bytes(partition_cols),
+            "entity": "stop_time_updates",
+            "version": "1",
+            "partition_columns": partition_cols,
         },
     )
     write_path: Path = DATA_PATH / "stop_time_updates"

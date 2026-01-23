@@ -1,9 +1,16 @@
+from datetime import datetime
+
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app.cleanup import cleanup_all
-from app.config import CLEANUP_MINUTE, POLL_INTERVAL_SECONDS
-from app.ingest import combined_ingest
+from app.config import (
+    CLEANUP_MINUTE,
+    POLL_INTERVAL_SECONDS,
+    STATIC_INGEST_HOUR,
+)
+from app.realtime_ingest import combined_ingest
 from app.logging_config import configure_logging
+from app.static_ingest import static_ingest
 
 
 def main() -> None:
@@ -15,6 +22,7 @@ def main() -> None:
         "interval",
         seconds=POLL_INTERVAL_SECONDS,
         misfire_grace_time=POLL_INTERVAL_SECONDS,
+        next_run_time=datetime.now(),
     )
 
     # Daily cleanup (dedupe + compact previous day's data)
@@ -23,6 +31,16 @@ def main() -> None:
         cleanup_all,
         "cron",
         minute=CLEANUP_MINUTE,
+        next_run_time=datetime.now(),
+    )
+
+    # Daily GTFS static data check
+    scheduler.add_job(
+        static_ingest,
+        "cron",
+        hour=STATIC_INGEST_HOUR,
+        minute=0,
+        next_run_time=datetime.now(),
     )
 
     try:

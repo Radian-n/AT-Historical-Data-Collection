@@ -8,7 +8,7 @@ import pyarrow as pa
 import pytest
 from deltalake import write_deltalake
 
-from app.columns import Columns, make_schema
+from app.columns import Columns, REALTIME_FIELD_TYPES, make_schema
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -18,7 +18,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 # Minimal schema for vehicle positions tests
 VEHICLE_POSITIONS_TEST_SCHEMA = make_schema(
-    [
+    columns=[
         Columns.POLL_TIME,
         Columns.FEED_TIMESTAMP,
         Columns.VEHICLE_ID,
@@ -26,12 +26,13 @@ VEHICLE_POSITIONS_TEST_SCHEMA = make_schema(
         Columns.START_DATE,
         Columns.LATITUDE,
         Columns.LONGITUDE,
-    ]
+    ],
+    field_types=REALTIME_FIELD_TYPES,
 )
 
 # Schema for trip updates tests (trip-level data)
 TRIP_UPDATES_TEST_SCHEMA = make_schema(
-    [
+    columns=[
         Columns.POLL_TIME,
         Columns.FEED_TIMESTAMP,
         Columns.TRIP_ID,
@@ -44,12 +45,13 @@ TRIP_UPDATES_TEST_SCHEMA = make_schema(
         Columns.LABEL,
         Columns.LICENSE_PLATE,
         Columns.ENTITY_IS_DELETED,
-    ]
+    ],
+    field_types=REALTIME_FIELD_TYPES,
 )
 
 # Schema for stop time updates tests (includes arrival/departure for merge)
 STOP_TIME_UPDATES_TEST_SCHEMA = make_schema(
-    [
+    columns=[
         Columns.POLL_TIME,
         Columns.FEED_TIMESTAMP,
         Columns.TRIP_ID,
@@ -64,7 +66,8 @@ STOP_TIME_UPDATES_TEST_SCHEMA = make_schema(
         Columns.DEPARTURE_DELAY,
         Columns.DEPARTURE_TIME,
         Columns.DEPARTURE_UNCERTAINTY,
-    ]
+    ],
+    field_types=REALTIME_FIELD_TYPES,
 )
 
 
