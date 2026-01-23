@@ -356,37 +356,24 @@ class StaticDataIngest(ABC):
         Args:
             table: Original table from CSV.
             feed_info: Feed validity and version info.
-            download_time: Timestamp of download (for audit).
+            download_time: Timestamp of download (unused, kept for interface).
 
         Returns:
             Table with version columns appended:
             - valid_from: Feed start date (from feed_info.txt)
             - valid_to: Feed end date (from feed_info.txt)
-            - feed_version: Version string from feed publisher
-            - downloaded_at: When we downloaded the data (audit)
         """
         n_rows = len(table)
 
-        # Create version columns using feed validity dates
         valid_from = pa.array(
             [feed_info.feed_start_date] * n_rows, type=pa.string()
         )
         valid_to = pa.array(
             [feed_info.feed_end_date] * n_rows, type=pa.string()
         )
-        feed_version = pa.array(
-            [feed_info.feed_version] * n_rows, type=pa.string()
-        )
-        downloaded_at = pa.array(
-            [download_time] * n_rows, type=pa.timestamp("s", tz="+00:00")
-        )
 
-        # Append columns
-        return (
-            table.append_column("valid_from", valid_from)
-            .append_column("valid_to", valid_to)
-            .append_column("feed_version", feed_version)
-            .append_column("downloaded_at", downloaded_at)
+        return table.append_column("valid_from", valid_from).append_column(
+            "valid_to", valid_to
         )
 
     def transform(self, table: pa.Table) -> pa.Table:
@@ -467,8 +454,6 @@ class AgencyData(StaticDataIngest):
             Columns.AGENCY_EMAIL,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -504,8 +489,6 @@ class StopsData(StaticDataIngest):
             Columns.END_DATE,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -537,8 +520,6 @@ class RoutesData(StaticDataIngest):
             Columns.CONTRACT_ID,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -569,8 +550,6 @@ class TripsData(StaticDataIngest):
             Columns.BIKES_ALLOWED,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -601,8 +580,6 @@ class StopTimesData(StaticDataIngest):
             Columns.TIMEPOINT,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -633,8 +610,6 @@ class CalendarData(StaticDataIngest):
             Columns.END_DATE,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -658,8 +633,6 @@ class CalendarDatesData(StaticDataIngest):
             Columns.EXCEPTION_TYPE,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -685,8 +658,6 @@ class ShapesData(StaticDataIngest):
             Columns.SHAPE_DIST_TRAVELED,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -714,8 +685,6 @@ class FareAttributesData(StaticDataIngest):
             Columns.TRANSFER_DURATION,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -741,8 +710,6 @@ class FareRulesData(StaticDataIngest):
             Columns.CONTAINS_ID,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -768,8 +735,6 @@ class FrequenciesData(StaticDataIngest):
             Columns.EXACT_TIMES,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
@@ -794,8 +759,6 @@ class TransfersData(StaticDataIngest):
             Columns.MIN_TRANSFER_TIME,
             Columns.VALID_FROM,
             Columns.VALID_TO,
-            Columns.FEED_VERSION,
-            Columns.DOWNLOADED_AT,
         ],
         field_types=STATIC_FIELD_TYPES,
         metadata={
