@@ -8,8 +8,11 @@ stores it in Delta Lake tables for historical analysis.
 - Collects vehicle positions, trip updates, and stop time updates from AT's
   GTFS-Realtime API
 - Collects versioned GTFS static data (routes, stops, trips, schedules, etc.)
-- Writes to Delta Lake with (start_date, route_id) partitioning
-- Daily cleanup job deduplicates and compacts data
+- Two-layer storage architecture:
+  - **Raw layer**: Captures all data with minimal filtering
+  - **Processed layer**: Deduplicated and transformed outputs
+- Hourly compaction reduces file count and enforces retention
+- Daily processing transforms raw data into clean, deduplicated outputs
 - Uses APScheduler for job scheduling
 - MD5-based feed deduplication (skips unchanged responses)
 - Efficient static data change detection via If-Modified-Since/If-None-Match
@@ -48,6 +51,8 @@ Optional settings:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `POLL_INTERVAL_SECONDS` | `30` | Seconds between realtime API requests |
+| `RAW_RETENTION_DAYS` | `7` | Days to retain raw data before deletion |
+| `PROCESSING_DELAY_HOURS` | `12` | Hour of day (UTC) to run daily processing |
 | `STATIC_INGEST_HOUR` | `15` | Hour of day (UTC) to check for static updates |
 | `GTFS_STATIC_URL` | `https://gtfs.at.govt.nz/gtfs.zip` | GTFS static data endpoint |
 | `DATA_PATH` | `data` | Directory for Delta Lake tables |
@@ -58,9 +63,10 @@ Optional settings:
 uv run python main.py
 ```
 
-The application runs continuously, polling the API on a schedule and writing
-to Delta Lake tables. A daily cleanup task deduplicates and compacts each
-day's data.
+The application runs continuously with three scheduled tasks:
+- **Realtime ingest** (every 30s): Polls API and writes to raw layer
+- **Compaction** (hourly): Consolidates files and enforces retention
+- **Processing** (daily): Transforms raw data into deduplicated outputs
 
 ## Data Storage
 
@@ -70,20 +76,28 @@ Data is stored as Delta Lake tables with Hive-style partitioning. The
 storage location is configured via the `DATA_PATH` environment variable
 (defaults to `data/`).
 
+Realtime data uses a two-layer architecture:
+- **Raw layer** (`data/raw/`): All captured data, retained for 7 days
+- **Processed layer** (`data/processed/`): Deduplicated and transformed outputs
+
 ```
 $DATA_PATH/
-├── vehicle_positions/
-│   ├── _delta_log/
-│   └── start_date=20250115/
-│       └── route_id=123/
-│           └── *.parquet
-├── trip_updates/
-│   ├── _delta_log/
-│   └── start_date=20250115/
+├── raw/                          # Raw realtime data (7-day retention)
+│   ├── vehicle_positions/
+│   │   ├── _delta_log/
+│   │   └── start_date=20250115/
+│   │       └── route_id=123/
+│   │           └── *.parquet
+│   ├── trip_updates/
+│   │   └── ...
+│   └── stop_time_updates/        # Includes predictions
 │       └── ...
-├── stop_time_updates/
-│   ├── _delta_log/
-│   └── start_date=20250115/
+├── processed/                    # Deduplicated outputs
+│   ├── vehicle_positions/        # Dedupe by (vehicle_id, feed_timestamp)
+│   │   └── ...
+│   ├── trip_updates/             # Latest state per (trip_id, start_date)
+│   │   └── ...
+│   └── stop_time_events/         # Merged arrival/departure, predictions filtered
 │       └── ...
 └── static/
     ├── static_metadata.json
@@ -111,24 +125,30 @@ Delta Lake is a storage layer on top of Parquet that adds:
 - **Schema enforcement** - prevents accidental schema drift
 - **Time travel** - query historical versions if needed
 
-### Data Cleanup
+### Compaction (Hourly)
 
-A daily cleanup job runs hourly (at minute 20) targeting the previous day's
-data. Running hourly ensures cleanup happens soon after midnight while
-remaining idempotent.
+Compaction runs hourly (at minute 20) to maintain the raw layer:
 
-The cleanup job:
+1. **Consolidates files** - Runs Delta OPTIMIZE to merge small files into
+   larger ones for better query performance.
+2. **Enforces retention** - Deletes partitions older than `RAW_RETENTION_DAYS`
+   (default 7 days) to bound storage growth.
+3. **Vacuums** - Physically removes unreferenced files from disk.
 
-1. **Deduplicates rows** - Rows with identical dedupe keys are consolidated.
-   For vehicle_positions: one row per (vehicle_id, feed_timestamp).
-   For trip_updates: one row per (trip_id, start_date), keeping the latest.
-   For stop_time_updates: merges separate arrival/departure observations.
-2. **Compacts files** - The deduplicated data is written as a single parquet
-   file per partition, replacing the many small files created during ingestion.
-3. **Vacuums** - Physically deletes unreferenced files from disk.
+### Processing (Daily)
 
-Until cleanup runs for a given day, expect temporary duplicates and many
-small files.
+Processing runs daily at `PROCESSING_DELAY_HOURS` (default 12:00 UTC) to
+transform the previous day's raw data into deduplicated outputs:
+
+1. **vehicle_positions** - Deduplicated by (vehicle_id, feed_timestamp).
+   One row per unique vehicle observation.
+2. **trip_updates** - Keeps latest observation per (trip_id, start_date).
+   Preserves final trip state (important for cancellations).
+3. **stop_time_events** - Filters predictions (uncertainty != 0) and merges
+   separate arrival/departure rows into single events per stop.
+
+The 12-hour delay ensures all data for a given operational day has been
+captured before processing begins.
 
 ## Data Dictionary
 
@@ -184,9 +204,9 @@ One row per trip. Captures trip-level status (especially cancellations).
 
 **Partitioned by:** `(start_date, route_id)`
 
-### stop_time_updates
+### stop_time_updates (raw layer)
 
-One row per stop per trip. Arrival and departure data merged during cleanup.
+One row per stop time update. Captures all updates including predictions.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -205,7 +225,17 @@ One row per stop per trip. Arrival and departure data merged during cleanup.
 | `departure_time` | int64 | Actual departure time (Unix timestamp) |
 | `departure_uncertainty` | int32 | Departure uncertainty (0 = confirmed) |
 
-**Dedupe key:** `(trip_id, start_date, stop_sequence)` - merges arrival/departure
+**Partitioned by:** `(start_date, route_id)`
+
+### stop_time_events (processed layer)
+
+One row per stop per trip. Predictions filtered, arrival/departure merged.
+
+Same schema as stop_time_updates, but:
+- Only confirmed times (uncertainty = 0) are included
+- Arrival and departure rows merged into single events
+
+**Dedupe key:** `(trip_id, start_date, stop_sequence, stop_id)`
 
 **Partitioned by:** `(start_date, route_id)`
 
@@ -214,15 +244,27 @@ One row per stop per trip. Arrival and departure data merged during cleanup.
 Delta Lake stores data as standard Parquet files, so you can read them
 directly with any Parquet-compatible tool.
 
+**Which layer to query:**
+- **Processed layer** (`data/processed/`): Use for analysis. Deduplicated,
+  clean data with one row per logical event.
+- **Raw layer** (`data/raw/`): Use for debugging or when you need prediction
+  data. Contains duplicates and all captured updates.
+
 ### DuckDB
 
 ```python
 import duckdb
 
-# Use glob patterns to target specific partitions, reducing I/O.
+# Query processed data (deduplicated)
 duckdb.sql("""
     SELECT vehicle_id, latitude, longitude
-    FROM read_parquet('data/vehicle_positions/start_date=20250115/**/*.parquet')
+    FROM read_parquet('data/processed/vehicle_positions/start_date=20250115/**/*.parquet')
+""")
+
+# Query raw data (includes duplicates)
+duckdb.sql("""
+    SELECT vehicle_id, latitude, longitude, poll_time
+    FROM read_parquet('data/raw/vehicle_positions/start_date=20250115/**/*.parquet')
 """)
 ```
 
@@ -233,7 +275,7 @@ import polars as pl
 
 # scan_parquet is lazy - filters and column selection are pushed down.
 df = (
-    pl.scan_parquet("data/vehicle_positions/**/route_id=101/*.parquet")
+    pl.scan_parquet("data/processed/vehicle_positions/**/route_id=101/*.parquet")
     .select(["vehicle_id", "latitude", "longitude", "feed_timestamp"])
     .collect()
 )
@@ -246,7 +288,7 @@ import pandas as pd
 
 # Read a specific partition with selected columns.
 df = pd.read_parquet(
-    "data/vehicle_positions/start_date=20250115/route_id=101",
+    "data/processed/vehicle_positions/start_date=20250115/route_id=101",
     columns=["vehicle_id", "latitude", "longitude"],
 )
 ```
@@ -265,20 +307,32 @@ entity types in a single response.
 
 ```
 app/
-├── cleanup.py          # Daily deduplication and compaction
+├── realtime_ingest.py  # Realtime feed fetcher, base class, entity classes
+├── compaction.py       # Hourly Delta OPTIMIZE and retention cleanup
+├── processing.py       # Daily raw -> processed transformations
+├── static_ingest.py    # Static data fetcher, base class, entity classes
 ├── columns.py          # Column definitions, schema builder, dedupe keys
 ├── config.py           # Configuration and environment variables
-├── realtime_ingest.py  # Realtime feed fetcher, base class, entity classes
-├── static_ingest.py    # Static data fetcher, base class, entity classes
+├── cleanup.py          # Legacy cleanup (deprecated)
 ├── logging_config.py   # Logging setup
 └── utils.py            # Utility functions
 tests/
 ├── conftest.py         # Pytest fixtures and test utilities
-└── test_cleanup.py     # Cleanup module tests
+├── test_cleanup.py     # Cleanup module tests (legacy)
+├── test_compaction.py  # Compaction module tests
+└── test_processing.py  # Processing module tests
 main.py                 # Entry point
 ```
 
 ### Architecture
+
+#### Data Flow
+
+```
+API (30s) -> raw ingest (stale filter) -> data/raw/
+Hourly    -> compaction (OPTIMIZE + vacuum) + retention cleanup
+Daily     -> processing (dedupe + transform) -> data/processed/
+```
 
 #### Realtime Data (GTFS-Realtime)
 
@@ -291,8 +345,13 @@ MD5-based deduplication, and protobuf decoding.
 - `normalise()` method to parse protobuf entities into rows
 
 **Entity classes** (`VehiclePositions`, `TripUpdates`, `StopTimeUpdates`)
-implement entity-specific parsing logic and write to separate Delta Lake
-tables.
+implement entity-specific parsing logic and write to the raw layer.
+
+**Compaction** (`app/compaction.py`) consolidates files hourly and enforces
+retention by deleting old partitions.
+
+**Processing** (`app/processing.py`) runs daily to transform raw data into
+deduplicated outputs in the processed layer.
 
 #### Static Data (GTFS Static)
 
