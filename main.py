@@ -2,14 +2,16 @@ from datetime import datetime
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from app.cleanup import cleanup_all
+from app.compaction import compact_all
 from app.config import (
-    CLEANUP_MINUTE,
+    COMPACTION_MINUTE,
     POLL_INTERVAL_SECONDS,
+    PROCESSING_DELAY_HOURS,
     STATIC_INGEST_HOUR,
 )
-from app.realtime_ingest import combined_ingest
 from app.logging_config import configure_logging
+from app.processing import process_all
+from app.realtime_ingest import combined_ingest
 from app.static_ingest import static_ingest
 
 
@@ -25,12 +27,22 @@ def main() -> None:
         next_run_time=datetime.now(),
     )
 
-    # Daily cleanup (dedupe + compact previous day's data)
-    # Runs hourly but targets the previous day; idempotent so safe to run often
+    # Hourly compaction (Delta OPTIMIZE + retention cleanup)
+    # Reduces file count and removes old raw data
     scheduler.add_job(
-        cleanup_all,
+        compact_all,
         "cron",
-        minute=CLEANUP_MINUTE,
+        minute=COMPACTION_MINUTE,
+        next_run_time=datetime.now(),
+    )
+
+    # Daily processing (raw -> processed transformation)
+    # Runs at PROCESSING_DELAY_HOURS UTC to process previous day's data
+    scheduler.add_job(
+        process_all,
+        "cron",
+        hour=PROCESSING_DELAY_HOURS,
+        minute=0,
         next_run_time=datetime.now(),
     )
 

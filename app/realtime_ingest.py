@@ -23,7 +23,7 @@ from requests.models import Response
 from app.columns import Columns, make_schema, REALTIME_FIELD_TYPES
 from app.config import (
     AT_API_KEY,
-    DATA_PATH,
+    RAW_PATH,
     STALE_THRESHOLD_MINUTES,
 )
 
@@ -230,10 +230,9 @@ class VehiclePositions(Ingest):
             "entity": "vehicle_positions",
             "version": "1",
             "partition_columns": partition_cols,
-
         },
     )
-    write_path: Path = DATA_PATH / "vehicle_positions"
+    write_path: Path = RAW_PATH / "vehicle_positions"
 
     def normalise(
         self,
@@ -332,7 +331,7 @@ class TripUpdates(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: Path = DATA_PATH / "trip_updates"
+    write_path: Path = RAW_PATH / "trip_updates"
 
     def normalise(
         self,
@@ -425,7 +424,7 @@ class StopTimeUpdates(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: Path = DATA_PATH / "stop_time_updates"
+    write_path: Path = RAW_PATH / "stop_time_updates"
 
     def normalise(
         self,
@@ -433,8 +432,9 @@ class StopTimeUpdates(Ingest):
     ) -> list[dict[str, Any]]:
         """Parse stop time updates from protobuf feed.
 
-        Creates one row per stop_time_update. Only includes rows with
-        confirmed (non-predicted) arrival or departure times.
+        Creates one row per stop_time_update. Captures all updates including
+        predictions (uncertainty != 0). Filtering of predictions is deferred
+        to the daily processing step.
 
         start_date and route_id use fallback values ("UNKNOWN", "NA")
         since they are partition columns and cannot be NULL.
@@ -457,34 +457,25 @@ class StopTimeUpdates(Ingest):
             route_id: str = e.trip.route_id or "NA"
 
             for stu in e.stop_time_update:
-                # Only record confirmed times (uncertainty = 0)
-                has_confirmed_arrival: bool = (
-                    stu.arrival.time > 0 and stu.arrival.uncertainty == 0
-                )
-                has_confirmed_departure: bool = (
-                    stu.departure.time > 0 and stu.departure.uncertainty == 0
-                )
-
-                if has_confirmed_arrival or has_confirmed_departure:
-                    row: dict[Columns, datetime | Any | None] = {
-                        Columns.POLL_TIME: self.poll_time,
-                        Columns.FEED_TIMESTAMP: e.timestamp,
-                        Columns.TRIP_ID: e.trip.trip_id or None,
-                        Columns.START_DATE: start_date,
-                        Columns.ROUTE_ID: route_id,
-                        Columns.STOP_SEQUENCE: stu.stop_sequence,
-                        Columns.STOP_ID: stu.stop_id or None,
-                        Columns.STOP_SCHEDULE_RELATIONSHIP: (
-                            stu.schedule_relationship
-                        ),
-                        Columns.ARRIVAL_DELAY: stu.arrival.delay,
-                        Columns.ARRIVAL_TIME: stu.arrival.time or None,
-                        Columns.ARRIVAL_UNCERTAINTY: stu.arrival.uncertainty,
-                        Columns.DEPARTURE_DELAY: stu.departure.delay,
-                        Columns.DEPARTURE_TIME: stu.departure.time or None,
-                        Columns.DEPARTURE_UNCERTAINTY: stu.departure.uncertainty,
-                    }
-                    rows.append(row)
+                row: dict[Columns, datetime | Any | None] = {
+                    Columns.POLL_TIME: self.poll_time,
+                    Columns.FEED_TIMESTAMP: e.timestamp,
+                    Columns.TRIP_ID: e.trip.trip_id or None,
+                    Columns.START_DATE: start_date,
+                    Columns.ROUTE_ID: route_id,
+                    Columns.STOP_SEQUENCE: stu.stop_sequence,
+                    Columns.STOP_ID: stu.stop_id or None,
+                    Columns.STOP_SCHEDULE_RELATIONSHIP: (
+                        stu.schedule_relationship
+                    ),
+                    Columns.ARRIVAL_DELAY: stu.arrival.delay,
+                    Columns.ARRIVAL_TIME: stu.arrival.time or None,
+                    Columns.ARRIVAL_UNCERTAINTY: stu.arrival.uncertainty,
+                    Columns.DEPARTURE_DELAY: stu.departure.delay,
+                    Columns.DEPARTURE_TIME: stu.departure.time or None,
+                    Columns.DEPARTURE_UNCERTAINTY: stu.departure.uncertainty,
+                }
+                rows.append(row)
 
         return rows
 
