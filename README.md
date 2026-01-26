@@ -52,8 +52,8 @@ Optional settings:
 |----------|---------|-------------|
 | `POLL_INTERVAL_SECONDS` | `30` | Seconds between realtime API requests |
 | `RAW_RETENTION_DAYS` | `7` | Days to retain raw data before deletion |
-| `PROCESSING_DELAY_HOURS` | `12` | Hour of day (UTC) to run daily processing |
-| `STATIC_INGEST_HOUR` | `15` | Hour of day (UTC) to check for static updates |
+| `PROCESSING_HOUR_NZT` | `4` | Hour of day (NZ time) to run daily processing |
+| `STATIC_INGEST_HOUR_NZT` | `3` | Hour of day (NZ time) to check for static updates |
 | `GTFS_STATIC_URL` | `https://gtfs.at.govt.nz/gtfs.zip` | GTFS static data endpoint |
 | `DATA_PATH` | `data` | Directory for Delta Lake tables |
 
@@ -137,7 +137,7 @@ Compaction runs hourly (at minute 20) to maintain the raw layer:
 
 ### Processing (Daily)
 
-Processing runs daily at `PROCESSING_DELAY_HOURS` (default 12:00 UTC) to
+Processing runs daily at `PROCESSING_HOUR_NZT` (default 4:00 AM NZ time) to
 transform the previous day's raw data into deduplicated outputs:
 
 1. **vehicle_positions** - Deduplicated by (vehicle_id, feed_timestamp).
@@ -147,8 +147,9 @@ transform the previous day's raw data into deduplicated outputs:
 3. **stop_time_events** - Filters predictions (uncertainty != 0) and merges
    separate arrival/departure rows into single events per stop.
 
-The 12-hour delay ensures all data for a given operational day has been
-captured before processing begins.
+The 4am NZ time default provides a buffer after the end of the operational
+day to ensure all trips have completed before processing begins. The
+scheduler handles daylight saving (NZST/NZDT) transitions automatically.
 
 ## Data Dictionary
 
@@ -313,12 +314,10 @@ app/
 ├── static_ingest.py    # Static data fetcher, base class, entity classes
 ├── columns.py          # Column definitions, schema builder, dedupe keys
 ├── config.py           # Configuration and environment variables
-├── cleanup.py          # Legacy cleanup (deprecated)
 ├── logging_config.py   # Logging setup
 └── utils.py            # Utility functions
 tests/
 ├── conftest.py         # Pytest fixtures and test utilities
-├── test_cleanup.py     # Cleanup module tests (legacy)
 ├── test_compaction.py  # Compaction module tests
 └── test_processing.py  # Processing module tests
 main.py                 # Entry point

@@ -9,15 +9,34 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# How long to wait before hitting the API again
+# =============================================================================
+# API Configuration
+# =============================================================================
+
+AT_API_KEY: Final[str] = os.getenv("AT_API_KEY", "")
+if not AT_API_KEY:
+    raise RuntimeError("AT_API_KEY not set")
+
+GTFS_STATIC_URL: Final[str] = os.getenv(
+    "GTFS_STATIC_URL", "https://gtfs.at.govt.nz/gtfs.zip"
+)
+
+# =============================================================================
+# Storage Paths
+# =============================================================================
+
+DATA_PATH: Final[Path] = Path(os.getenv("DATA_PATH", "data"))
+RAW_PATH: Final[Path] = DATA_PATH / "raw"
+PROCESSED_PATH: Final[Path] = DATA_PATH / "processed"
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+
+# How long to wait before hitting the API again.
 POLL_INTERVAL_SECONDS: Final[float] = int(
     os.getenv("POLL_INTERVAL_SECONDS", "30")
 )
-
-# Maximum age (minutes) for feed_timestamp relative to poll_time.
-# Entities older than this are skipped to avoid partition sprawl.
-# This value should be less than COMPACTION_MINUTE.
-STALE_THRESHOLD_MINUTES: Final[int] = 15
 
 # Minute of the hour to run compaction (Delta OPTIMIZE + retention cleanup).
 # AT API can return data up to ~15 minutes old, so a response at 05:14:30
@@ -25,30 +44,40 @@ STALE_THRESHOLD_MINUTES: Final[int] = 15
 # a buffer to ensure all late-arriving data has been ingested before compaction.
 COMPACTION_MINUTE: Final[int] = 20
 
+# Hour of day (NZ time) to run daily processing (raw -> processed).
+# Default 4:00 AM NZT gives ~4 hours buffer after end of NZ operational day.
+# Allows any trips that started just before midnight to end before processing.
+# APScheduler handles daylight saving (NZST/NZDT) automatically.
+PROCESSING_HOUR_NZT: Final[int] = int(os.getenv("PROCESSING_HOUR_NZT", "4"))
+
+# Hour of day (NZ time) to check for GTFS static data updates.
+# Default 3:00 AM NZT. APScheduler handles daylight saving automatically.
+STATIC_INGEST_HOUR_NZT: Final[int] = int(
+    os.getenv("STATIC_INGEST_HOUR_NZT", "3")
+)
+
+# =============================================================================
+# Data Lifecycle
+# =============================================================================
+
+# Maximum age (minutes) for feed_timestamp relative to poll_time.
+# Entities older than this are skipped to avoid partition sprawl.
+# This value must be less than COMPACTION_MINUTE.
+STALE_THRESHOLD_MINUTES: Final[int] = 15
+
+if STALE_THRESHOLD_MINUTES >= COMPACTION_MINUTE:
+    raise ValueError(
+        f"STALE_THRESHOLD_MINUTES ({STALE_THRESHOLD_MINUTES}) must be less "
+        f"than COMPACTION_MINUTE ({COMPACTION_MINUTE}) to avoid partition "
+        "sprawl from late-arriving data."
+    )
+
 # Number of days to retain raw data before deletion.
 RAW_RETENTION_DAYS: Final[int] = int(os.getenv("RAW_RETENTION_DAYS", "7"))
 
-# Hour of day (UTC) to run daily processing (raw -> processed).
-# Default 12:00 UTC provides a 12-hour buffer after end of NZ operational day.
-PROCESSING_DELAY_HOURS: Final[int] = int(
-    os.getenv("PROCESSING_DELAY_HOURS", "12")
-)
-
-# Hour of day (UTC) to check for GTFS static data updates.
-# Default 15:00 UTC = 3:00am NZST (4:00am NZDT during daylight saving).
-STATIC_INGEST_HOUR: Final[int] = int(os.getenv("STATIC_INGEST_HOUR", "15"))
-
-# API
-AT_API_KEY: Final[str] = os.getenv("AT_API_KEY", "")
-if not AT_API_KEY:
-    raise RuntimeError("AT_API_KEY not set")
-
-GTFS_STATIC_URL = "https://gtfs.at.govt.nz/gtfs.zip"
-
-# Storage
-DATA_PATH: Final[Path] = Path("data")
-RAW_PATH: Final[Path] = DATA_PATH / "raw"
-PROCESSED_PATH: Final[Path] = DATA_PATH / "processed"
+# =============================================================================
+# Table Names
+# =============================================================================
 
 
 class Tables(StrEnum):

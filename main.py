@@ -6,8 +6,8 @@ from app.compaction import compact_all
 from app.config import (
     COMPACTION_MINUTE,
     POLL_INTERVAL_SECONDS,
-    PROCESSING_DELAY_HOURS,
-    STATIC_INGEST_HOUR,
+    PROCESSING_HOUR_NZT,
+    STATIC_INGEST_HOUR_NZT,
 )
 from app.logging_config import configure_logging
 from app.processing import process_all
@@ -37,12 +37,13 @@ def main() -> None:
     )
 
     # Daily processing (raw -> processed transformation)
-    # Runs at PROCESSING_DELAY_HOURS UTC to process previous day's data
+    # Runs at PROCESSING_HOUR_NZT (NZ time) to process previous day's data
     scheduler.add_job(
         process_all,
         "cron",
-        hour=PROCESSING_DELAY_HOURS,
+        hour=PROCESSING_HOUR_NZT,
         minute=0,
+        timezone="Pacific/Auckland",
         next_run_time=datetime.now(),
     )
 
@@ -50,8 +51,9 @@ def main() -> None:
     scheduler.add_job(
         static_ingest,
         "cron",
-        hour=STATIC_INGEST_HOUR,
+        hour=STATIC_INGEST_HOUR_NZT,
         minute=0,
+        timezone="Pacific/Auckland",
         next_run_time=datetime.now(),
     )
 
