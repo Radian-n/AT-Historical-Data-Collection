@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from logging import Logger
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import duckdb
 import pyarrow as pa
@@ -22,24 +23,24 @@ from app.config import PROCESSED_PATH, RAW_PATH, Tables
 
 log: Logger = logging.getLogger("Processing")
 
+NZ_TZ: ZoneInfo = ZoneInfo("Pacific/Auckland")
+
 
 def _get_target_date(now: datetime) -> str:
-    """Calculate the target date for processing (previous day).
+    """Calculate the target date for processing (previous NZ day).
 
-    Processing runs at 12:00 UTC, targeting the previous NZ operational
-    day which ended at 12:00 UTC (midnight NZST).
+    Converts current time to NZ timezone and returns yesterday's date.
+    This correctly handles daylight saving transitions (NZST/NZDT).
 
     Args:
-        now: Current time (UTC).
+        now: Current time (should be timezone-aware, typically UTC).
 
     Returns:
-        Date string in YYYYMMDD format.
+        Date string in YYYYMMDD format for yesterday in NZ time.
     """
-    # Target the previous day's data
-    target: datetime = now.replace(
-        hour=0, minute=0, second=0, microsecond=0
-    ) - timedelta(days=1)
-    return target.strftime("%Y%m%d")
+    nz_now: datetime = now.astimezone(NZ_TZ)
+    yesterday_nz: datetime = nz_now - timedelta(days=1)
+    return yesterday_nz.strftime("%Y%m%d")
 
 
 def _write_processed(

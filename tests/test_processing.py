@@ -28,23 +28,36 @@ pytestmark = pytest.mark.unit
 
 
 class TestGetTargetDate:
-    """Unit tests for _get_target_date helper function."""
+    """Unit tests for _get_target_date helper function.
 
-    def test_returns_previous_day(self) -> None:
-        """Should return the previous day's date."""
-        now = datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
+    These tests use UTC times that map to specific NZ times to verify
+    the timezone conversion works correctly. NZDT (summer) = UTC+13.
+    """
+
+    def test_returns_previous_nz_day(self) -> None:
+        """Should return yesterday in NZ time.
+
+        Jan 1 15:00 UTC = Jan 2 04:00 NZDT → yesterday = Jan 1
+        """
+        now = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
         result = _get_target_date(now)
         assert result == "20260101"
 
     def test_new_year_boundary(self) -> None:
-        """At Jan 1, should return Dec 31 of previous year."""
-        now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        """At Jan 1 NZT, should return Dec 31 of previous year.
+
+        Dec 31 15:00 UTC = Jan 1 04:00 NZDT → yesterday = Dec 31
+        """
+        now = datetime(2025, 12, 31, 15, 0, 0, tzinfo=timezone.utc)
         result = _get_target_date(now)
         assert result == "20251231"
 
     def test_month_boundary(self) -> None:
-        """At Feb 1, should return Jan 31."""
-        now = datetime(2026, 2, 1, 12, 0, 0, tzinfo=timezone.utc)
+        """At Feb 1 NZT, should return Jan 31.
+
+        Jan 31 15:00 UTC = Feb 1 04:00 NZDT → yesterday = Jan 31
+        """
+        now = datetime(2026, 1, 31, 15, 0, 0, tzinfo=timezone.utc)
         result = _get_target_date(now)
         assert result == "20260131"
 
@@ -78,7 +91,7 @@ class TestProcessVehiclePositions:
 
         # Run processing for Jan 1 (now = Jan 2)
         process_vehicle_positions(
-            now=datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+            now=datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
             raw_path=raw_path,
             processed_path=processed_path,
         )
@@ -100,7 +113,7 @@ class TestProcessVehiclePositions:
 
         with caplog.at_level(logging.WARNING):
             process_vehicle_positions(
-                now=datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+                now=datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
                 raw_path=raw_path,
                 processed_path=processed_path,
             )
@@ -129,7 +142,7 @@ class TestProcessVehiclePositions:
         # Try to process Dec 31 (no data exists) - now = Jan 1
         with caplog.at_level(logging.INFO):
             process_vehicle_positions(
-                now=datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+                now=datetime(2025, 12, 31, 15, 0, 0, tzinfo=timezone.utc),
                 raw_path=raw_path,
                 processed_path=processed_path,
             )
@@ -171,7 +184,7 @@ class TestProcessVehiclePositions:
         )
 
         process_vehicle_positions(
-            now=datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+            now=datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
             raw_path=raw_path,
             processed_path=processed_path,
         )
@@ -245,7 +258,7 @@ class TestProcessTripUpdates:
         )
 
         process_trip_updates(
-            now=datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+            now=datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
             raw_path=raw_path,
             processed_path=processed_path,
         )
@@ -294,7 +307,7 @@ class TestProcessStopTimeEvents:
         assert raw_count == 4
 
         process_stop_time_events(
-            now=datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+            now=datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
             raw_path=raw_path,
             processed_path=processed_path,
         )
@@ -364,7 +377,7 @@ class TestProcessStopTimeEvents:
         )
 
         process_stop_time_events(
-            now=datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+            now=datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
             raw_path=raw_path,
             processed_path=processed_path,
         )
@@ -404,7 +417,7 @@ class TestProcessStopTimeEvents:
         )
 
         process_stop_time_events(
-            now=datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+            now=datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
             raw_path=raw_path,
             processed_path=processed_path,
         )
@@ -449,7 +462,7 @@ class TestProcessAll:
         )
 
         process_all(
-            now=datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+            now=datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
             raw_path=raw_path,
             processed_path=processed_path,
         )
@@ -481,7 +494,7 @@ class TestProcessAll:
 
         with caplog.at_level(logging.WARNING):
             process_all(
-                now=datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc),
+                now=datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
                 raw_path=raw_path,
                 processed_path=processed_path,
             )
