@@ -313,12 +313,10 @@ app/
 ├── static_ingest.py    # Static data fetcher, base class, entity classes
 ├── columns.py          # Column definitions, schema builder, dedupe keys
 ├── config.py           # Configuration and environment variables
-├── cleanup.py          # Legacy cleanup (deprecated)
 ├── logging_config.py   # Logging setup
 └── utils.py            # Utility functions
 tests/
 ├── conftest.py         # Pytest fixtures and test utilities
-├── test_cleanup.py     # Cleanup module tests (legacy)
 ├── test_compaction.py  # Compaction module tests
 └── test_processing.py  # Processing module tests
 main.py                 # Entry point
