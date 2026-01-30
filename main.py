@@ -1,5 +1,7 @@
 from datetime import datetime
+import logging
 
+import sentry_sdk
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app.compaction import compact_all
@@ -7,6 +9,8 @@ from app.config import (
     COMPACTION_MINUTE,
     POLL_INTERVAL_SECONDS,
     PROCESSING_HOUR_NZT,
+    SENTRY_DSN,
+    SENTRY_ENVIRONMENT,
     STATIC_INGEST_HOUR_NZT,
 )
 from app.logging_config import configure_logging
@@ -17,6 +21,22 @@ from app.static_ingest import static_ingest
 
 def main() -> None:
     configure_logging()
+
+    has_dsn = bool(SENTRY_DSN)
+    has_env = bool(SENTRY_ENVIRONMENT)
+
+    if has_dsn and has_env:
+        sentry_sdk.init(
+            dsn=SENTRY_DSN, environment=SENTRY_ENVIRONMENT, enable_logs=True
+        )
+        logging.info("Sentry successfully initialised")
+    else:
+        if not has_dsn:
+            logging.warning("SENTRY_DSN environment variable missing...")
+        if not has_env:
+            logging.warning(
+                "SENTRY_ENVIRONMENT environment variable missing..."
+            )
 
     scheduler = BlockingScheduler()
     scheduler.add_job(
