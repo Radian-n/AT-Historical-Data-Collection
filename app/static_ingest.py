@@ -9,6 +9,7 @@ downloading the full ZIP file every time.
 import hashlib
 import json
 import logging
+import os
 from abc import ABC
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,8 +25,10 @@ import requests
 from deltalake import write_deltalake
 from requests.models import Response
 
-from app.columns import Columns, STATIC_FIELD_TYPES, make_schema
-from app.config import DATA_PATH, GTFS_STATIC_URL
+from app.columns import STATIC_FIELD_TYPES, Columns, make_schema
+from app.config import STATIC_DATA_PATH, GTFS_STATIC_URL, METADATA_PATH
+from app.storage import get_storage_options
+from app.utils import join_path
 
 
 @dataclass
@@ -152,9 +155,7 @@ class GTFSStaticFetcher:
     """
 
     url: ClassVar[str] = GTFS_STATIC_URL
-    metadata_file: ClassVar[Path] = (
-        DATA_PATH / "static" / "static_metadata.json"
-    )
+    metadata_file: ClassVar[str] = join_path(METADATA_PATH, "static_metadata.json")
 
     def __init__(self) -> None:
         self.log = logging.getLogger(f"{self.__class__.__name__}")
@@ -162,7 +163,7 @@ class GTFSStaticFetcher:
 
     def _load_metadata(self) -> StaticFetchMetadata | None:
         """Load metadata from the last successful fetch."""
-        if not self.metadata_file.exists():
+        if not os.path.exists(self.metadata_file):
             return None
 
         try:
@@ -175,7 +176,7 @@ class GTFSStaticFetcher:
 
     def _save_metadata(self, metadata: StaticFetchMetadata) -> None:
         """Save metadata for future conditional requests."""
-        self.metadata_file.parent.mkdir(parents=True, exist_ok=True)
+        os.makedirs(os.path.dirname(self.metadata_file), exist_ok=True)
         with open(self.metadata_file, "w") as f:
             json.dump(metadata.to_dict(), f, indent=2)
 
@@ -279,7 +280,7 @@ class StaticDataIngest(ABC):
 
     Instance attributes (set in __init__):
         csv_filename: str - Name of CSV file in GTFS zip (name + ".txt")
-        write_path: Path - Output path for Delta Lake table
+        write_path: str - Output path for Delta Lake table
     """
 
     name: ClassVar[str]
@@ -289,7 +290,7 @@ class StaticDataIngest(ABC):
     def __init__(self) -> None:
         self.log: Logger = logging.getLogger(f"{self.__class__.__name__}")
         self.csv_filename: str = self.name + ".txt"
-        self.write_path: Path = DATA_PATH / "static" / self.name
+        self.write_path: str = join_path(STATIC_DATA_PATH, self.name)
 
     def ingest(
         self,
@@ -394,7 +395,7 @@ class StaticDataIngest(ABC):
         self,
         data: pa.Table,
         partition_cols: list[str],
-        path: Path | str,
+        path: str | str,
         feed_info: FeedInfo,
     ) -> None:
         """Write table to Delta Lake, overwriting existing data for same dates.
@@ -417,22 +418,24 @@ class StaticDataIngest(ABC):
 
         # Check if table exists to determine write mode
         table_path = Path(path)
-        if table_path.exists():
+        if os.path.exists(table_path):
             # Table exists - overwrite matching date range
             write_deltalake(
-                table_or_uri=path,
+                table_or_uri=str(path),
                 data=data,
                 partition_by=partition_cols,
                 mode="overwrite",
                 predicate=predicate,
+                storage_options=get_storage_options(),
             )
         else:
             # New table - append (creates table)
             write_deltalake(
-                table_or_uri=path,
+                table_or_uri=str(path),
                 data=data,
                 partition_by=partition_cols,
                 mode="append",
+                storage_options=get_storage_options(),
             )
 
 

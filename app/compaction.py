@@ -4,22 +4,23 @@ Runs hourly to compact small parquet files using Delta OPTIMIZE and
 remove partitions older than the retention period.
 """
 
+import os
 import logging
 from datetime import datetime, timedelta, timezone
 from logging import Logger
-from pathlib import Path
 
 from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
 
-from app.config import RAW_PATH, RAW_RETENTION_DAYS, Tables
+from app.config import RAW_DATA_PATH, RAW_RETENTION_DAYS, Tables
+from app.utils import join_path
 
 log: Logger = logging.getLogger("Compaction")
 
 
 def compact_table(
     table_name: str,
-    raw_path: Path | None = None,
+    raw_path: str | None = None,
 ) -> None:
     """Run Delta OPTIMIZE on a raw table.
 
@@ -30,14 +31,14 @@ def compact_table(
     Args:
         table_name: Name of the Delta Lake table to compact.
         raw_path: Base path for raw tables (for testability). Defaults to
-            RAW_PATH from config.
+            RAW_DATA_PATH from config.
     """
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
 
-    table_path: Path = raw_path / table_name
+    table_path: str = join_path(raw_path, table_name)
 
-    if not table_path.exists():
+    if not os.path.exists(table_path):
         log.info("Table %s does not exist, skipping compaction", table_name)
         return
 
@@ -68,7 +69,7 @@ def compact_table(
 def cleanup_old_partitions(
     table_name: str,
     now: datetime | None = None,
-    raw_path: Path | None = None,
+    raw_path: str | None = None,
     retention_days: int | None = None,
 ) -> None:
     """Delete raw partitions older than retention period.
@@ -80,20 +81,20 @@ def cleanup_old_partitions(
         table_name: Name of the Delta Lake table to clean.
         now: Current time (for testability). Defaults to UTC now.
         raw_path: Base path for raw tables (for testability). Defaults to
-            RAW_PATH from config.
+            RAW_DATA_PATH from config.
         retention_days: Days to retain data (for testability). Defaults to
             RAW_RETENTION_DAYS from config.
     """
     if now is None:
         now = datetime.now(timezone.utc)
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
     if retention_days is None:
         retention_days = RAW_RETENTION_DAYS
 
-    table_path: Path = raw_path / table_name
+    table_path: str = join_path(raw_path, table_name)
 
-    if not table_path.exists():
+    if not os.path.exists(table_path):
         log.info(
             "Table %s does not exist, skipping retention cleanup", table_name
         )
@@ -131,7 +132,7 @@ def cleanup_old_partitions(
 
 def compact_all(
     now: datetime | None = None,
-    raw_path: Path | None = None,
+    raw_path: str | None = None,
 ) -> None:
     """Compact all raw tables and cleanup old partitions.
 
@@ -143,7 +144,7 @@ def compact_all(
     Args:
         now: Current time (for testability). Defaults to UTC now.
         raw_path: Base path for raw tables (for testability). Defaults to
-            RAW_PATH from config.
+            RAW_DATA_PATH from config.
     """
     if now is None:
         now = datetime.now(timezone.utc)

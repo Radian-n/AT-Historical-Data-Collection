@@ -4,10 +4,10 @@ Runs daily to process the previous day's raw data, deduplicating and
 transforming it into the processed layer.
 """
 
+import os
 import logging
 from datetime import datetime, timedelta, timezone
 from logging import Logger
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import duckdb
@@ -19,7 +19,9 @@ from app.columns import (
     VEHICLE_POSITIONS_DEDUPE_KEYS,
     Columns,
 )
-from app.config import PROCESSED_PATH, RAW_PATH, Tables
+from app.config import PROCESSED_DATA_PATH, RAW_DATA_PATH, Tables
+from app.storage import get_storage_options
+from app.utils import join_path
 
 log: Logger = logging.getLogger("Processing")
 
@@ -47,7 +49,7 @@ def _write_processed(
     data: pa.Table,
     table_name: str,
     start_date: str,
-    processed_path: Path,
+    processed_path: str,
 ) -> None:
     """Write processed data to Delta Lake.
 
@@ -57,18 +59,19 @@ def _write_processed(
         data: PyArrow table to write.
         table_name: Name of the output table.
         start_date: Target date partition (YYYYMMDD).
-        processed_path: Path to processed tables directory.
+        processed_path: str to processed tables directory.
     """
-    output_path: Path = processed_path / table_name
+    output_path: str = join_path(processed_path, table_name)
     partition_cols: list[str] = [Columns.START_DATE, Columns.ROUTE_ID]
     predicate: str = f"{Columns.START_DATE} = '{start_date}'"
 
     write_deltalake(
-        output_path,
+        str(output_path),
         data,
         mode="overwrite",
         predicate=predicate,
         partition_by=partition_cols,
+        storage_options=get_storage_options(),
     )
 
     log.info(
@@ -81,8 +84,8 @@ def _write_processed(
 
 def process_vehicle_positions(
     now: datetime | None = None,
-    raw_path: Path | None = None,
-    processed_path: Path | None = None,
+    raw_path: str | None = None,
+    processed_path: str | None = None,
 ) -> None:
     """Process raw vehicle positions into deduplicated output.
 
@@ -97,14 +100,14 @@ def process_vehicle_positions(
     if now is None:
         now = datetime.now(timezone.utc)
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
     if processed_path is None:
-        processed_path = PROCESSED_PATH
+        processed_path = PROCESSED_DATA_PATH
 
     table_name: str = Tables.VEHICLE_POSITIONS
-    raw_table_path: Path = raw_path / table_name
+    raw_table_path: str = join_path(raw_path, table_name)
 
-    if not raw_table_path.exists():
+    if not os.path.exists(raw_table_path):
         log.warning(
             "Raw table %s does not exist, skipping processing", table_name
         )
@@ -135,8 +138,8 @@ def process_vehicle_positions(
 
 def process_trip_updates(
     now: datetime | None = None,
-    raw_path: Path | None = None,
-    processed_path: Path | None = None,
+    raw_path: str | None = None,
+    processed_path: str | None = None,
 ) -> None:
     """Process raw trip updates into latest-state output.
 
@@ -152,14 +155,14 @@ def process_trip_updates(
     if now is None:
         now = datetime.now(timezone.utc)
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
     if processed_path is None:
-        processed_path = PROCESSED_PATH
+        processed_path = PROCESSED_DATA_PATH
 
     table_name: str = Tables.TRIP_UPDATES
-    raw_table_path: Path = raw_path / table_name
+    raw_table_path: str = join_path(raw_path, table_name)
 
-    if not raw_table_path.exists():
+    if not os.path.exists(raw_table_path):
         log.warning(
             "Raw table %s does not exist, skipping processing", table_name
         )
@@ -193,8 +196,8 @@ def process_trip_updates(
 
 def process_stop_time_events(
     now: datetime | None = None,
-    raw_path: Path | None = None,
-    processed_path: Path | None = None,
+    raw_path: str | None = None,
+    processed_path: str | None = None,
 ) -> None:
     """Process raw stop time updates into merged stop time events.
 
@@ -217,15 +220,15 @@ def process_stop_time_events(
     if now is None:
         now = datetime.now(timezone.utc)
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
     if processed_path is None:
-        processed_path = PROCESSED_PATH
+        processed_path = PROCESSED_DATA_PATH
 
     raw_table_name: str = Tables.STOP_TIME_UPDATES
     output_table_name: str = Tables.STOP_TIME_EVENTS
-    raw_table_path: Path = raw_path / raw_table_name
+    raw_table_path: str = join_path(raw_path, raw_table_name)
 
-    if not raw_table_path.exists():
+    if not os.path.exists(raw_table_path):
         log.warning(
             "Raw table %s does not exist, skipping processing",
             raw_table_name,
@@ -287,8 +290,8 @@ def process_stop_time_events(
 
 def process_all(
     now: datetime | None = None,
-    raw_path: Path | None = None,
-    processed_path: Path | None = None,
+    raw_path: str | None = None,
+    processed_path: str | None = None,
 ) -> None:
     """Process all raw tables into the processed layer.
 

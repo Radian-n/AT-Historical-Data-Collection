@@ -2,12 +2,14 @@
 
 import os
 from enum import StrEnum
-from pathlib import Path
 from typing import Final
 
 from dotenv import load_dotenv
 
+from app.utils import join_path
+
 load_dotenv()
+
 
 # =============================================================================
 # Sentry
@@ -28,12 +30,30 @@ GTFS_STATIC_URL: Final[str] = os.getenv(
 )
 
 # =============================================================================
+# R2 Configuration
+# =============================================================================
+
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
+R2_BUCKET = os.getenv("R2_BUCKET", "")
+
+# =============================================================================
 # Storage Paths
 # =============================================================================
 
-DATA_PATH: Final[Path] = Path(os.getenv("DATA_PATH", "data"))
-RAW_PATH: Final[Path] = DATA_PATH / "raw"
-PROCESSED_PATH: Final[Path] = DATA_PATH / "processed"
+# Raw and metadata stored locally
+LOCAL_DATA_PATH = os.getenv("LOCAL_DATA_PATH", "data")
+METADATA_PATH: Final[str] = join_path(LOCAL_DATA_PATH, "metadata")
+RAW_DATA_PATH: Final[str] = join_path(LOCAL_DATA_PATH, "raw")
+
+# Processed and static data stored to remote
+if R2_ACCOUNT_ID and R2_BUCKET:
+    REMOTE_DATA_PATH = f"s3://{R2_BUCKET}"
+else:
+    REMOTE_DATA_PATH = join_path(LOCAL_DATA_PATH, "processed")
+PROCESSED_DATA_PATH: Final[str] = join_path(REMOTE_DATA_PATH, "realtime")
+STATIC_DATA_PATH: Final[str] = join_path(REMOTE_DATA_PATH, "static")
 
 # =============================================================================
 # Scheduling
@@ -79,7 +99,7 @@ if STALE_THRESHOLD_MINUTES >= COMPACTION_MINUTE:
     )
 
 # Number of days to retain raw data before deletion.
-RAW_RETENTION_DAYS: Final[int] = int(os.getenv("RAW_RETENTION_DAYS", "7"))
+RAW_RETENTION_DAYS: Final[int] = int(os.getenv("RAW_RETENTION_DAYS", "2"))
 
 # =============================================================================
 # Table Names

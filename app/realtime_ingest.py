@@ -23,9 +23,11 @@ from requests.models import Response
 from app.columns import Columns, make_schema, REALTIME_FIELD_TYPES
 from app.config import (
     AT_API_KEY,
-    RAW_PATH,
+    RAW_DATA_PATH,
     STALE_THRESHOLD_MINUTES,
 )
+from app.storage import get_storage_options
+from app.utils import join_path
 
 
 @dataclass
@@ -133,7 +135,7 @@ class Ingest(ABC):
     Required class attributes:
         schema: pa.Schema - PyArrow schema for the entity
         partition_cols: list[Columns] - Columns to partition by
-        write_path: Path - Output path for Delta Lake table
+        write_path: str - Output path for Delta Lake table
 
     Required methods:
         normalise(feed) -> list[dict]
@@ -141,7 +143,7 @@ class Ingest(ABC):
 
     partition_cols: ClassVar[list[Columns]]
     schema: ClassVar[pa.Schema]
-    write_path: ClassVar[Path]
+    write_path: ClassVar[str]
 
     def __init__(self) -> None:
         self.log = logging.getLogger(f"{self.__class__.__name__}")
@@ -169,14 +171,15 @@ class Ingest(ABC):
         return len(rows)
 
     def write_data(
-        self, data: pa.Table, partition_cols: list[str], path: Path | str
+        self, data: pa.Table, partition_cols: list[str], path: str | str
     ) -> None:
         """Write table to Delta Lake with partitioning."""
         write_deltalake(
-            table_or_uri=path,
+            table_or_uri=str(path),
             data=data,
             partition_by=partition_cols,
             mode="append",
+            storage_options=get_storage_options(),
         )
 
     @abstractmethod
@@ -232,7 +235,7 @@ class VehiclePositions(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: Path = RAW_PATH / "vehicle_positions"
+    write_path: str = join_path(RAW_DATA_PATH, "vehicle_positions")
 
     def normalise(
         self,
@@ -331,7 +334,7 @@ class TripUpdates(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: Path = RAW_PATH / "trip_updates"
+    write_path: str = join_path(RAW_DATA_PATH, "trip_updates")
 
     def normalise(
         self,
@@ -424,7 +427,7 @@ class StopTimeUpdates(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: Path = RAW_PATH / "stop_time_updates"
+    write_path: str = join_path(RAW_DATA_PATH, "stop_time_updates")
 
     def normalise(
         self,
