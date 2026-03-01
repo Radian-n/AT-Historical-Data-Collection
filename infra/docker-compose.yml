@@ -6,8 +6,6 @@ services:
     stop_grace_period: 100s  # Give time to finish cleanly
     env_file:
       - .env
-    volumes:
-      - ./data:/app/data  # Persist data outside container
 
   watchtower:
     image: nickfedor/watchtower   # replaces containrrr/watchtower
