@@ -3,6 +3,8 @@
 Collects real-time and static GTFS data from the Auckland Transport API and
 stores it in Delta Lake tables for historical analysis.
 
+The ingestion application is deployed on a DigitalOcean VPS, and the data is stored on Cloudflare R2.
+
 ## Features
 
 - Collects vehicle positions, trip updates, and stop time updates from AT's
@@ -310,6 +312,47 @@ df = pd.read_parquet(
 ```
 
 ## Technical Reference
+
+### Setting Up the App in Production
+
+#### 1. Provision VPS
+
+- Create Ubuntu 22.04+ droplet/VM, 1x vCPU, 1GB RAM
+- Enable SSH key authentication
+- Configure firewall (allow SSH only)
+
+#### 2. Install Docker
+
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# Log out and back in
+```
+
+#### 3. Deploy Application
+```bash
+mkdir -p /opt/at-collector && cd /opt/at-collector
+
+# Create docker-compose.yml (copy from above)
+nano docker-compose.yml
+
+# Create .env file
+echo "AT_API_KEY=your_key_here" > .env
+
+# Start services
+docker compose up -d
+```
+
+#### 4. Deployment Workflow
+
+1. Make changes to code locally
+2. Commit and push to GitHub
+3. Create a release/tag: `git tag v1.0.0 && git push --tags`
+4. GitHub Actions builds and pushes image to ghcr.io
+5. Watchtower on VPS detects new image within 5 minutes
+6. Container automatically restarts with new version
+
+
 
 ### API Rate Limits
 
