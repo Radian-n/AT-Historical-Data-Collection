@@ -178,6 +178,7 @@ class Ingest(ABC):
             data=data,
             partition_by=partition_cols,
             mode="append",
+            storage_options=get_storage_options(),
         )
 
     @abstractmethod

@@ -71,6 +71,7 @@ def _write_processed(
         mode="overwrite",
         predicate=predicate,
         partition_by=partition_cols,
+        storage_options=get_storage_options(),
     )
 
     log.info(

@@ -427,6 +427,7 @@ class StaticDataIngest(ABC):
                 partition_by=partition_cols,
                 mode="overwrite",
                 predicate=predicate,
+                storage_options=get_storage_options(),
             )
         else:
             # New table - append (creates table)
@@ -435,6 +436,7 @@ class StaticDataIngest(ABC):
                 data=data,
                 partition_by=partition_cols,
                 mode="append",
+                storage_options=get_storage_options(),
             )
 
 
