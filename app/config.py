@@ -99,7 +99,7 @@ if STALE_THRESHOLD_MINUTES >= COMPACTION_MINUTE:
     )
 
 # Number of days to retain raw data before deletion.
-RAW_RETENTION_DAYS: Final[int] = int(os.getenv("RAW_RETENTION_DAYS", "7"))
+RAW_RETENTION_DAYS: Final[int] = int(os.getenv("RAW_RETENTION_DAYS", "2"))
 
 # =============================================================================
 # Table Names
