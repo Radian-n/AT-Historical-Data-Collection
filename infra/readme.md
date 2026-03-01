@@ -24,7 +24,8 @@ mkdir -p /opt/at-collector && cd /opt/at-collector
 # Create docker-compose.yml (copy from above infra/docker-compose.yml)
 nano docker-compose.yml
 
-# Create .env file (copy from .env. Replace `SENTRY_ENVIRONMENT` with Production)
+# Create .env file
+# Fill out and copy the contents of `infra/.example.env`
 nano .env
 
 # Start services
@@ -41,8 +42,37 @@ docker compose up -d
 6. Container automatically restarts with new version
 
 
-# Download Data for Analysis
-From your local machine (via WSL on Windows):
+# R2
+
+To delete an R2 bucket's contents:
+
 ```bash
-rsync -avzP user@vps-ip:/opt/at-collector/data/ ~/at-data/
+rclone delete r2:at-gtfs-data
+```
+
+
+### Access Data for Analysis (from anywhere)
+```python
+# On your local machine - no VPS access needed!
+from deltalake import DeltaTable
+
+storage_options = {
+    "AWS_ACCESS_KEY_ID": "your_access_key",
+    "AWS_SECRET_ACCESS_KEY": "your_secret_key",
+    "AWS_ENDPOINT_URL": "https://{account_id}.r2.cloudflarestorage.com",
+    "AWS_REGION": "auto",
+}
+
+dt = DeltaTable(
+    "s3://at-gtfs-data/processed/vehicle_positions",
+    storage_options=storage_options
+)
+df = dt.to_pandas()
+
+# Or with Polars
+import polars as pl
+df = pl.read_delta(
+    "s3://at-gtfs-data/processed/vehicle_positions",
+    storage_options=storage_options
+)
 ```
