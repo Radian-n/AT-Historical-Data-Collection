@@ -1,6 +1,6 @@
 services:
   at-collector:
-    image: ghcr.io/Radian-n/at-historical-data-collection:latest
+    image: ghcr.io/radian-n/at-historical-data-collection:latest
     container_name: at-collector
     restart: unless-stopped
     stop_grace_period: 100s  # Give time to finish cleanly
@@ -10,12 +10,14 @@ services:
       - ./data:/app/data  # Persist data outside container
 
   watchtower:
-    image: containrrr/watchtower
+    image: nickfedor/watchtower   # replaces containrrr/watchtower
     container_name: watchtower
     restart: unless-stopped
+    env_file:
+      - .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_POLL_INTERVAL=300  # Check every 5 minutes
+      - WATCHTOWER_POLL_INTERVAL=300
       - WATCHTOWER_INCLUDE_STOPPED=true
