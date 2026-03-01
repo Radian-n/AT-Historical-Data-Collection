@@ -26,7 +26,8 @@ from app.config import (
     RAW_DATA_PATH,
     STALE_THRESHOLD_MINUTES,
 )
-from app.storage import get_storage_options, join_path
+from app.storage import get_storage_options
+from app.utils import join_path
 
 
 @dataclass

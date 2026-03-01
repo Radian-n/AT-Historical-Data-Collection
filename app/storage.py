@@ -21,10 +21,3 @@ def get_storage_options() -> dict | None:
         "AWS_REGION": "auto",
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true",  # Safe for single writer
     }
-
-
-def join_path(base: str, *parts: str) -> str:
-    """Join path segments for either local or S3 paths."""
-    if base.startswith("s3://"):
-        return "/".join([base.rstrip("/"), *parts])
-    return str(Path(base, *parts))

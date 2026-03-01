@@ -6,7 +6,7 @@ from typing import Final
 
 from dotenv import load_dotenv
 
-from app.storage import get_data_path, join_path
+from app.utils import join_path
 
 load_dotenv()
 

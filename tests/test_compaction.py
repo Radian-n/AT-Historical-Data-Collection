@@ -19,7 +19,7 @@ from app.compaction import (
 )
 from app.columns import Columns
 from app.config import Tables
-from app.storage import join_path
+from app.utils import join_path
 
 pytestmark = pytest.mark.unit
 

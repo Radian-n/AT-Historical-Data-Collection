@@ -27,6 +27,8 @@ from requests.models import Response
 
 from app.columns import STATIC_FIELD_TYPES, Columns, make_schema
 from app.config import STATIC_DATA_PATH, GTFS_STATIC_URL, METADATA_PATH
+from app.storage import get_storage_options
+from app.utils import join_path
 
 
 @dataclass

@@ -14,7 +14,7 @@ from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
 
 from app.config import RAW_DATA_PATH, RAW_RETENTION_DAYS, Tables
-from app.storage import join_path
+from app.utils import join_path
 
 log: Logger = logging.getLogger("Compaction")
 

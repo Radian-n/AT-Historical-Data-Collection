@@ -23,7 +23,7 @@ from app.processing import (
     process_trip_updates,
     process_vehicle_positions,
 )
-from app.storage import join_path
+from app.utils import join_path
 
 pytestmark = pytest.mark.unit
 
