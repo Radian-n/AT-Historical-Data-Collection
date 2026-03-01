@@ -2,12 +2,14 @@
 
 import os
 from enum import StrEnum
-from pathlib import Path
 from typing import Final
 
 from dotenv import load_dotenv
 
+from app.storage import get_data_path, join_path
+
 load_dotenv()
+
 
 # =============================================================================
 # Sentry
@@ -31,9 +33,9 @@ GTFS_STATIC_URL: Final[str] = os.getenv(
 # Storage Paths
 # =============================================================================
 
-DATA_PATH: Final[Path] = Path(os.getenv("DATA_PATH", "data"))
-RAW_PATH: Final[Path] = DATA_PATH / "raw"
-PROCESSED_PATH: Final[Path] = DATA_PATH / "processed"
+DATA_PATH: Final[str] = get_data_path()
+RAW_PATH: Final[str] = join_path(DATA_PATH, "raw")
+PROCESSED_PATH: Final[str] = join_path(DATA_PATH, "processed")
 
 # =============================================================================
 # Scheduling

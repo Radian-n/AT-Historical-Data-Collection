@@ -2,13 +2,14 @@
 
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
 import pytest
 from deltalake import write_deltalake
 
-from app.columns import Columns, REALTIME_FIELD_TYPES, make_schema
+from app.columns import REALTIME_FIELD_TYPES, Columns, make_schema
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -213,6 +214,10 @@ def sample_stop_time_updates_data() -> list[dict]:
         },
     ]
 
+@pytest.fixture
+def tmp_path_str(tmp_path: str) -> str:
+    """Create a string version of tmp_path"""
+    return str(tmp_path)
 
 def create_test_delta_table(
     path: str,

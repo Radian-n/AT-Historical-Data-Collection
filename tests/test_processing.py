@@ -1,6 +1,6 @@
 """Tests for the processing module."""
-
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,6 +23,7 @@ from app.processing import (
     process_trip_updates,
     process_vehicle_positions,
 )
+from app.storage import join_path
 
 pytestmark = pytest.mark.unit
 
@@ -67,14 +68,14 @@ class TestProcessVehiclePositions:
 
     def test_deduplicates_vehicle_positions(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         sample_vehicle_positions_data: list[dict],
     ) -> None:
         """Processing should remove duplicate rows based on dedupe keys."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
-        raw_table_path: Path = raw_path / Tables.VEHICLE_POSITIONS
-        processed_table_path: Path = processed_path / Tables.VEHICLE_POSITIONS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
+        raw_table_path: str = join_path(raw_path , Tables.VEHICLE_POSITIONS)
+        processed_table_path: str = join_path(processed_path, Tables.VEHICLE_POSITIONS)
 
         create_test_delta_table(
             str(raw_table_path),
@@ -104,12 +105,12 @@ class TestProcessVehiclePositions:
 
     def test_skips_nonexistent_table(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Should log warning and skip if raw table doesn't exist."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
 
         with caplog.at_level(logging.WARNING):
             process_vehicle_positions(
@@ -122,14 +123,14 @@ class TestProcessVehiclePositions:
 
     def test_skips_empty_partition(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         sample_vehicle_positions_data: list[dict],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Should skip if no data for target day."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
-        raw_table_path: Path = raw_path / Tables.VEHICLE_POSITIONS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
+        raw_table_path: str = join_path(raw_path , Tables.VEHICLE_POSITIONS)
 
         # Create table with data for Jan 1
         create_test_delta_table(
@@ -151,13 +152,13 @@ class TestProcessVehiclePositions:
 
     def test_preserves_unique_rows(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
     ) -> None:
         """Should not remove rows with unique dedupe keys."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
-        raw_table_path: Path = raw_path / Tables.VEHICLE_POSITIONS
-        processed_table_path: Path = processed_path / Tables.VEHICLE_POSITIONS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
+        raw_table_path: str = join_path(raw_path , Tables.VEHICLE_POSITIONS)
+        processed_table_path: str = join_path(processed_path, Tables.VEHICLE_POSITIONS)
 
         # Create data with all unique keys
         base_ts = datetime(2026, 1, 1, 10, 30, 0, tzinfo=timezone.utc)
@@ -201,13 +202,13 @@ class TestProcessTripUpdates:
 
     def test_keeps_latest_observation(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
     ) -> None:
         """Should keep only the latest observation per trip."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
-        raw_table_path: Path = raw_path / Tables.TRIP_UPDATES
-        processed_table_path: Path = processed_path / Tables.TRIP_UPDATES
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
+        raw_table_path: str = join_path(raw_path, Tables.TRIP_UPDATES)
+        processed_table_path: str = join_path(processed_path, Tables.TRIP_UPDATES)
 
         # Create data with multiple observations of the same trip
         data: list[dict[str, Any]] = [
@@ -284,14 +285,14 @@ class TestProcessStopTimeEvents:
 
     def test_merges_arrival_departure(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         sample_stop_time_updates_data: list[dict],
     ) -> None:
         """Processing should merge arrival and departure rows for same stop."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
-        raw_table_path: Path = raw_path / Tables.STOP_TIME_UPDATES
-        processed_table_path: Path = processed_path / Tables.STOP_TIME_EVENTS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
+        raw_table_path: str = join_path(raw_path, Tables.STOP_TIME_UPDATES)
+        processed_table_path: str = join_path(processed_path, Tables.STOP_TIME_EVENTS)
 
         create_test_delta_table(
             str(raw_table_path),
@@ -339,13 +340,13 @@ class TestProcessStopTimeEvents:
 
     def test_excludes_predictions(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
     ) -> None:
         """Predictions (uncertainty != 0) should be excluded."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
-        raw_table_path: Path = raw_path / Tables.STOP_TIME_UPDATES
-        processed_table_path: Path = processed_path / Tables.STOP_TIME_EVENTS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
+        raw_table_path: str = join_path(raw_path, Tables.STOP_TIME_UPDATES)
+        processed_table_path: str = join_path(processed_path, Tables.STOP_TIME_EVENTS)
 
         base_ts = datetime(2026, 1, 1, 10, 25, 0, tzinfo=timezone.utc)
         data: list[dict[str, Any]] = [
@@ -400,14 +401,14 @@ class TestProcessStopTimeEvents:
 
     def test_writes_to_stop_time_events_table(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         sample_stop_time_updates_data: list[dict],
     ) -> None:
         """Should write to stop_time_events (not stop_time_updates)."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
-        raw_table_path: Path = raw_path / Tables.STOP_TIME_UPDATES
-        stop_time_events_path: Path = processed_path / Tables.STOP_TIME_EVENTS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
+        raw_table_path: str = join_path(raw_path, Tables.STOP_TIME_UPDATES)
+        stop_time_events_path: str = join_path(processed_path, Tables.STOP_TIME_EVENTS)
 
         create_test_delta_table(
             str(raw_table_path),
@@ -423,11 +424,11 @@ class TestProcessStopTimeEvents:
         )
 
         # stop_time_events should exist
-        assert stop_time_events_path.exists()
+        assert os.path.exists(stop_time_events_path)
 
         # stop_time_updates in processed should NOT exist
-        stu_processed_path: Path = processed_path / Tables.STOP_TIME_UPDATES
-        assert not stu_processed_path.exists()
+        stu_processed_path: str = join_path(processed_path, Tables.STOP_TIME_UPDATES)
+        assert not os.path.exists(stu_processed_path)
 
 
 class TestProcessAll:
@@ -435,16 +436,16 @@ class TestProcessAll:
 
     def test_processes_all_tables(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         sample_vehicle_positions_data: list[dict],
         sample_stop_time_updates_data: list[dict],
     ) -> None:
         """Should process all realtime tables."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
 
         # Create raw vehicle_positions
-        vp_raw_path: Path = raw_path / Tables.VEHICLE_POSITIONS
+        vp_raw_path: str = join_path(raw_path , Tables.VEHICLE_POSITIONS)
         create_test_delta_table(
             str(vp_raw_path),
             sample_vehicle_positions_data,
@@ -453,7 +454,7 @@ class TestProcessAll:
         )
 
         # Create raw stop_time_updates
-        stu_raw_path: Path = raw_path / Tables.STOP_TIME_UPDATES
+        stu_raw_path: str = join_path(raw_path, Tables.STOP_TIME_UPDATES)
         create_test_delta_table(
             str(stu_raw_path),
             sample_stop_time_updates_data,
@@ -468,16 +469,16 @@ class TestProcessAll:
         )
 
         # Check vehicle_positions was processed
-        vp_processed_path: Path = processed_path / Tables.VEHICLE_POSITIONS
-        assert vp_processed_path.exists()
+        vp_processed_path: str = join_path(processed_path, Tables.VEHICLE_POSITIONS)
+        assert os.path.exists(vp_processed_path)
         vp_count = duckdb.sql(
             f"SELECT COUNT(*) FROM delta_scan('{vp_processed_path}')"
         ).fetchone()[0]
         assert vp_count == 2  # Deduplicated from 4
 
         # Check stop_time_events was created
-        ste_processed_path: Path = processed_path / Tables.STOP_TIME_EVENTS
-        assert ste_processed_path.exists()
+        ste_processed_path: str = join_path(processed_path, Tables.STOP_TIME_EVENTS)
+        assert os.path.exists(ste_processed_path)
         ste_count = duckdb.sql(
             f"SELECT COUNT(*) FROM delta_scan('{ste_processed_path}')"
         ).fetchone()[0]
@@ -485,12 +486,12 @@ class TestProcessAll:
 
     def test_handles_missing_tables_gracefully(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Should handle missing raw tables without error."""
-        raw_path: Path = tmp_path / "raw"
-        processed_path: Path = tmp_path / "processed"
+        raw_path: str = join_path(tmp_path_str, "raw")
+        processed_path: str = join_path(tmp_path_str, "processed")
 
         with caplog.at_level(logging.WARNING):
             process_all(

@@ -4,6 +4,7 @@ Runs daily to process the previous day's raw data, deduplicating and
 transforming it into the processed layer.
 """
 
+import os
 import logging
 from datetime import datetime, timedelta, timezone
 from logging import Logger
@@ -20,6 +21,7 @@ from app.columns import (
     Columns,
 )
 from app.config import PROCESSED_PATH, RAW_PATH, Tables
+from app.storage import get_storage_options, join_path
 
 log: Logger = logging.getLogger("Processing")
 
@@ -59,12 +61,12 @@ def _write_processed(
         start_date: Target date partition (YYYYMMDD).
         processed_path: Path to processed tables directory.
     """
-    output_path: Path = processed_path / table_name
+    output_path: str = join_path(processed_path, table_name)
     partition_cols: list[str] = [Columns.START_DATE, Columns.ROUTE_ID]
     predicate: str = f"{Columns.START_DATE} = '{start_date}'"
 
     write_deltalake(
-        output_path,
+        str(output_path),
         data,
         mode="overwrite",
         predicate=predicate,
@@ -102,9 +104,9 @@ def process_vehicle_positions(
         processed_path = PROCESSED_PATH
 
     table_name: str = Tables.VEHICLE_POSITIONS
-    raw_table_path: Path = raw_path / table_name
+    raw_table_path: str = join_path(raw_path, table_name)
 
-    if not raw_table_path.exists():
+    if not os.path.exists(raw_table_path):
         log.warning(
             "Raw table %s does not exist, skipping processing", table_name
         )
@@ -157,9 +159,9 @@ def process_trip_updates(
         processed_path = PROCESSED_PATH
 
     table_name: str = Tables.TRIP_UPDATES
-    raw_table_path: Path = raw_path / table_name
+    raw_table_path: str = join_path(raw_path, table_name)
 
-    if not raw_table_path.exists():
+    if not os.path.exists(raw_table_path):
         log.warning(
             "Raw table %s does not exist, skipping processing", table_name
         )
@@ -223,9 +225,9 @@ def process_stop_time_events(
 
     raw_table_name: str = Tables.STOP_TIME_UPDATES
     output_table_name: str = Tables.STOP_TIME_EVENTS
-    raw_table_path: Path = raw_path / raw_table_name
+    raw_table_path: str = join_path(raw_path, raw_table_name)
 
-    if not raw_table_path.exists():
+    if not os.path.exists(raw_table_path):
         log.warning(
             "Raw table %s does not exist, skipping processing",
             raw_table_name,

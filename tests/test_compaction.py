@@ -19,6 +19,7 @@ from app.compaction import (
 )
 from app.columns import Columns
 from app.config import Tables
+from app.storage import join_path
 
 pytestmark = pytest.mark.unit
 
@@ -28,11 +29,11 @@ class TestCompactTable:
 
     def test_compacts_multiple_files(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
     ) -> None:
         """Compaction should reduce the number of parquet files."""
-        raw_path: Path = tmp_path / "raw"
-        table_path: Path = raw_path / Tables.VEHICLE_POSITIONS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        table_path: str = join_path(raw_path , Tables.VEHICLE_POSITIONS)
 
         # Create data with single route to keep all files in one partition
         base_ts = datetime(2026, 1, 1, 10, 30, 0, tzinfo=timezone.utc)
@@ -58,7 +59,7 @@ class TestCompactTable:
         )
 
         # Count parquet files before compaction (should be 2 from batched writes)
-        parquet_files_before: list[Path] = list(table_path.rglob("*.parquet"))
+        parquet_files_before: list[Path] = list(Path(table_path).rglob("*.parquet"))
         assert len(parquet_files_before) == 2, (
             "Test setup should create 2 files"
         )
@@ -66,16 +67,16 @@ class TestCompactTable:
         compact_table(Tables.VEHICLE_POSITIONS, raw_path=raw_path)
 
         # After compaction, should have 1 file
-        parquet_files_after: list[Path] = list(table_path.rglob("*.parquet"))
+        parquet_files_after: list[Path] = list(Path(table_path).rglob("*.parquet"))
         assert len(parquet_files_after) == 1
 
     def test_skips_nonexistent_table(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Compaction should skip if table doesn't exist."""
-        raw_path: Path = tmp_path / "raw"
+        raw_path: str = join_path(tmp_path_str, "raw")
 
         with caplog.at_level(logging.INFO):
             compact_table("nonexistent_table", raw_path=raw_path)
@@ -84,11 +85,11 @@ class TestCompactTable:
 
     def test_preserves_row_count(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
     ) -> None:
         """Compaction should not change the number of rows."""
-        raw_path: Path = tmp_path / "raw"
-        table_path: Path = raw_path / Tables.VEHICLE_POSITIONS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        table_path: str = join_path(raw_path , Tables.VEHICLE_POSITIONS)
 
         base_ts = datetime(2026, 1, 1, 10, 30, 0, tzinfo=timezone.utc)
         data: list[dict[Columns, datetime | float | int | str]] = [
@@ -131,11 +132,11 @@ class TestCleanupOldPartitions:
 
     def test_deletes_old_partitions(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
     ) -> None:
         """Should delete partitions older than retention period."""
-        raw_path: Path = tmp_path / "raw"
-        table_path: Path = raw_path / Tables.VEHICLE_POSITIONS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        table_path: str = join_path(raw_path , Tables.VEHICLE_POSITIONS)
 
         # Create data spanning multiple days
         base_ts = datetime(2026, 1, 10, 10, 30, 0, tzinfo=timezone.utc)
@@ -194,11 +195,11 @@ class TestCleanupOldPartitions:
 
     def test_skips_nonexistent_table(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Should skip if table doesn't exist."""
-        raw_path: Path = tmp_path / "raw"
+        raw_path: str = join_path(tmp_path_str, "raw")
 
         with caplog.at_level(logging.INFO):
             cleanup_old_partitions(
@@ -211,11 +212,11 @@ class TestCleanupOldPartitions:
 
     def test_keeps_recent_partitions(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
     ) -> None:
         """Should keep partitions within retention period."""
-        raw_path: Path = tmp_path / "raw"
-        table_path: Path = raw_path / Tables.VEHICLE_POSITIONS
+        raw_path: str = join_path(tmp_path_str, "raw")
+        table_path: str = join_path(raw_path , Tables.VEHICLE_POSITIONS)
 
         # Create recent data (within retention)
         base_ts = datetime(2026, 1, 10, 10, 30, 0, tzinfo=timezone.utc)
@@ -257,10 +258,10 @@ class TestCompactAll:
 
     def test_processes_all_tables(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
     ) -> None:
         """Should compact and cleanup all realtime tables."""
-        raw_path: Path = tmp_path / "raw"
+        raw_path: str = join_path(tmp_path_str, "raw")
 
         # Create test data for all three tables
         base_ts = datetime(2026, 1, 1, 10, 30, 0, tzinfo=timezone.utc)
@@ -279,7 +280,7 @@ class TestCompactAll:
         ]
 
         # Create vehicle_positions table
-        vp_path: Path = raw_path / Tables.VEHICLE_POSITIONS
+        vp_path: str = join_path(raw_path , Tables.VEHICLE_POSITIONS)
         create_test_delta_table(
             str(vp_path),
             base_data,
@@ -288,7 +289,8 @@ class TestCompactAll:
         )
 
         # Verify 2 files before compaction
-        files_before: int = len(list(vp_path.rglob("*.parquet")))
+        
+        files_before: int = len(list(Path(vp_path).rglob("*.parquet")))
         assert files_before == 2
 
         compact_all(
@@ -297,16 +299,16 @@ class TestCompactAll:
         )
 
         # Verify 1 file after compaction
-        files_after: int = len(list(vp_path.rglob("*.parquet")))
+        files_after: int = len(list(Path(vp_path).rglob("*.parquet")))
         assert files_after == 1
 
     def test_handles_missing_tables_gracefully(
         self,
-        tmp_path: Path,
+        tmp_path_str: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Should handle missing tables without error."""
-        raw_path: Path = tmp_path / "raw"
+        raw_path: str = join_path(tmp_path_str, "raw")
 
         # Call compact_all with no tables created
         with caplog.at_level(logging.INFO):

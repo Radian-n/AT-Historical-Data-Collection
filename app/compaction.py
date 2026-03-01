@@ -4,6 +4,7 @@ Runs hourly to compact small parquet files using Delta OPTIMIZE and
 remove partitions older than the retention period.
 """
 
+import os
 import logging
 from datetime import datetime, timedelta, timezone
 from logging import Logger
@@ -13,6 +14,7 @@ from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
 
 from app.config import RAW_PATH, RAW_RETENTION_DAYS, Tables
+from app.storage import join_path
 
 log: Logger = logging.getLogger("Compaction")
 
@@ -35,9 +37,9 @@ def compact_table(
     if raw_path is None:
         raw_path = RAW_PATH
 
-    table_path: Path = raw_path / table_name
+    table_path: str = join_path(raw_path, table_name)
 
-    if not table_path.exists():
+    if not os.path.exists(table_path):
         log.info("Table %s does not exist, skipping compaction", table_name)
         return
 
@@ -91,9 +93,9 @@ def cleanup_old_partitions(
     if retention_days is None:
         retention_days = RAW_RETENTION_DAYS
 
-    table_path: Path = raw_path / table_name
+    table_path: str = join_path(raw_path, table_name)
 
-    if not table_path.exists():
+    if not os.path.exists(table_path):
         log.info(
             "Table %s does not exist, skipping retention cleanup", table_name
         )

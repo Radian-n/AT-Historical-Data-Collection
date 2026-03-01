@@ -26,6 +26,7 @@ from app.config import (
     RAW_PATH,
     STALE_THRESHOLD_MINUTES,
 )
+from app.storage import get_storage_options, join_path
 
 
 @dataclass
@@ -141,7 +142,7 @@ class Ingest(ABC):
 
     partition_cols: ClassVar[list[Columns]]
     schema: ClassVar[pa.Schema]
-    write_path: ClassVar[Path]
+    write_path: ClassVar[str]
 
     def __init__(self) -> None:
         self.log = logging.getLogger(f"{self.__class__.__name__}")
@@ -173,7 +174,7 @@ class Ingest(ABC):
     ) -> None:
         """Write table to Delta Lake with partitioning."""
         write_deltalake(
-            table_or_uri=path,
+            table_or_uri=str(path),
             data=data,
             partition_by=partition_cols,
             mode="append",
@@ -232,7 +233,7 @@ class VehiclePositions(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: Path = RAW_PATH / "vehicle_positions"
+    write_path: str = join_path(RAW_PATH, "vehicle_positions")
 
     def normalise(
         self,
@@ -331,7 +332,7 @@ class TripUpdates(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: Path = RAW_PATH / "trip_updates"
+    write_path: Path = join_path(RAW_PATH, "trip_updates")
 
     def normalise(
         self,
@@ -424,7 +425,7 @@ class StopTimeUpdates(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: Path = RAW_PATH / "stop_time_updates"
+    write_path: str = join_path(RAW_PATH, "stop_time_updates")
 
     def normalise(
         self,
