@@ -20,8 +20,7 @@ from app.columns import (
     VEHICLE_POSITIONS_DEDUPE_KEYS,
     Columns,
 )
-from app.config import PROCESSED_PATH, RAW_PATH, Tables
-from app.storage import get_storage_options, join_path
+from app.config import PROCESSED_DATA_PATH, RAW_DATA_PATH, Tables
 
 log: Logger = logging.getLogger("Processing")
 
@@ -100,9 +99,9 @@ def process_vehicle_positions(
     if now is None:
         now = datetime.now(timezone.utc)
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
     if processed_path is None:
-        processed_path = PROCESSED_PATH
+        processed_path = PROCESSED_DATA_PATH
 
     table_name: str = Tables.VEHICLE_POSITIONS
     raw_table_path: str = join_path(raw_path, table_name)
@@ -155,9 +154,9 @@ def process_trip_updates(
     if now is None:
         now = datetime.now(timezone.utc)
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
     if processed_path is None:
-        processed_path = PROCESSED_PATH
+        processed_path = PROCESSED_DATA_PATH
 
     table_name: str = Tables.TRIP_UPDATES
     raw_table_path: str = join_path(raw_path, table_name)
@@ -220,9 +219,9 @@ def process_stop_time_events(
     if now is None:
         now = datetime.now(timezone.utc)
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
     if processed_path is None:
-        processed_path = PROCESSED_PATH
+        processed_path = PROCESSED_DATA_PATH
 
     raw_table_name: str = Tables.STOP_TIME_UPDATES
     output_table_name: str = Tables.STOP_TIME_EVENTS

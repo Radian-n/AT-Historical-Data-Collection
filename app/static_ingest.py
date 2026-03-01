@@ -26,8 +26,7 @@ from deltalake import write_deltalake
 from requests.models import Response
 
 from app.columns import STATIC_FIELD_TYPES, Columns, make_schema
-from app.config import DATA_PATH, GTFS_STATIC_URL
-from app.storage import get_storage_options, join_path
+from app.config import STATIC_DATA_PATH, GTFS_STATIC_URL, METADATA_PATH
 
 
 @dataclass
@@ -154,9 +153,7 @@ class GTFSStaticFetcher:
     """
 
     url: ClassVar[str] = GTFS_STATIC_URL
-    metadata_file: ClassVar[str] = join_path(
-        DATA_PATH, "static", "static_metadata.json"
-    )
+    metadata_file: ClassVar[str] = METADATA_PATH
 
     def __init__(self) -> None:
         self.log = logging.getLogger(f"{self.__class__.__name__}")
@@ -291,7 +288,7 @@ class StaticDataIngest(ABC):
     def __init__(self) -> None:
         self.log: Logger = logging.getLogger(f"{self.__class__.__name__}")
         self.csv_filename: str = self.name + ".txt"
-        self.write_path: Path = join_path(DATA_PATH, "static", self.name)
+        self.write_path: str = join_path(STATIC_DATA_PATH, self.name)
 
     def ingest(
         self,

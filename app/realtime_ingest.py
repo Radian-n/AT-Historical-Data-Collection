@@ -23,7 +23,7 @@ from requests.models import Response
 from app.columns import Columns, make_schema, REALTIME_FIELD_TYPES
 from app.config import (
     AT_API_KEY,
-    RAW_PATH,
+    RAW_DATA_PATH,
     STALE_THRESHOLD_MINUTES,
 )
 from app.storage import get_storage_options, join_path
@@ -234,7 +234,7 @@ class VehiclePositions(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: str = join_path(RAW_PATH, "vehicle_positions")
+    write_path: str = join_path(RAW_DATA_PATH, "vehicle_positions")
 
     def normalise(
         self,
@@ -333,7 +333,7 @@ class TripUpdates(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: Path = join_path(RAW_PATH, "trip_updates")
+    write_path: str = join_path(RAW_DATA_PATH, "trip_updates")
 
     def normalise(
         self,
@@ -426,7 +426,7 @@ class StopTimeUpdates(Ingest):
             "partition_columns": partition_cols,
         },
     )
-    write_path: str = join_path(RAW_PATH, "stop_time_updates")
+    write_path: str = join_path(RAW_DATA_PATH, "stop_time_updates")
 
     def normalise(
         self,

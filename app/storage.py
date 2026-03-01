@@ -3,18 +3,11 @@
 import os
 from pathlib import Path
 
-# R2 configuration from environment
-R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")
-R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "")
-R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
-R2_BUCKET = os.getenv("R2_BUCKET", "")
-
-
-def get_data_path() -> str:
-    """Return the base path for Delta Lake tables."""
-    if R2_ACCOUNT_ID and R2_BUCKET:
-        return f"s3://{R2_BUCKET}"
-    return os.getenv("DATA_PATH", "data")
+from app.config import (
+    R2_ACCESS_KEY_ID,
+    R2_ACCOUNT_ID,
+    R2_SECRET_ACCESS_KEY,
+)
 
 
 def get_storage_options() -> dict | None:

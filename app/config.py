@@ -42,9 +42,18 @@ R2_BUCKET = os.getenv("R2_BUCKET", "")
 # Storage Paths
 # =============================================================================
 
-DATA_PATH: Final[str] = get_data_path()
-RAW_PATH: Final[str] = join_path(DATA_PATH, "raw")
-PROCESSED_PATH: Final[str] = join_path(DATA_PATH, "processed")
+# Raw and metadata stored locally
+LOCAL_DATA_PATH = os.getenv("LOCAL_DATA_PATH", "data")
+METADATA_PATH: Final[str] = join_path(LOCAL_DATA_PATH, "metadata")
+RAW_DATA_PATH: Final[str] = join_path(LOCAL_DATA_PATH, "raw")
+
+# Processed and static data stored to remote
+if R2_ACCOUNT_ID and R2_BUCKET:
+    REMOTE_DATA_PATH = f"s3://{R2_BUCKET}"
+else:
+    REMOTE_DATA_PATH = join_path(LOCAL_DATA_PATH, "processed")
+PROCESSED_DATA_PATH: Final[str] = join_path(REMOTE_DATA_PATH, "realtime")
+STATIC_DATA_PATH: Final[str] = join_path(REMOTE_DATA_PATH, "static")
 
 # =============================================================================
 # Scheduling

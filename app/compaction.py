@@ -13,7 +13,7 @@ from pathlib import Path
 from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
 
-from app.config import RAW_PATH, RAW_RETENTION_DAYS, Tables
+from app.config import RAW_DATA_PATH, RAW_RETENTION_DAYS, Tables
 from app.storage import join_path
 
 log: Logger = logging.getLogger("Compaction")
@@ -32,10 +32,10 @@ def compact_table(
     Args:
         table_name: Name of the Delta Lake table to compact.
         raw_path: Base path for raw tables (for testability). Defaults to
-            RAW_PATH from config.
+            RAW_DATA_PATH from config.
     """
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
 
     table_path: str = join_path(raw_path, table_name)
 
@@ -82,14 +82,14 @@ def cleanup_old_partitions(
         table_name: Name of the Delta Lake table to clean.
         now: Current time (for testability). Defaults to UTC now.
         raw_path: Base path for raw tables (for testability). Defaults to
-            RAW_PATH from config.
+            RAW_DATA_PATH from config.
         retention_days: Days to retain data (for testability). Defaults to
             RAW_RETENTION_DAYS from config.
     """
     if now is None:
         now = datetime.now(timezone.utc)
     if raw_path is None:
-        raw_path = RAW_PATH
+        raw_path = RAW_DATA_PATH
     if retention_days is None:
         retention_days = RAW_RETENTION_DAYS
 
@@ -145,7 +145,7 @@ def compact_all(
     Args:
         now: Current time (for testability). Defaults to UTC now.
         raw_path: Base path for raw tables (for testability). Defaults to
-            RAW_PATH from config.
+            RAW_DATA_PATH from config.
     """
     if now is None:
         now = datetime.now(timezone.utc)
