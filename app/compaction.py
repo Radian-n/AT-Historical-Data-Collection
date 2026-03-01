@@ -8,7 +8,6 @@ import os
 import logging
 from datetime import datetime, timedelta, timezone
 from logging import Logger
-from pathlib import Path
 
 from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
@@ -21,7 +20,7 @@ log: Logger = logging.getLogger("Compaction")
 
 def compact_table(
     table_name: str,
-    raw_path: Path | None = None,
+    raw_path: str | None = None,
 ) -> None:
     """Run Delta OPTIMIZE on a raw table.
 
@@ -70,7 +69,7 @@ def compact_table(
 def cleanup_old_partitions(
     table_name: str,
     now: datetime | None = None,
-    raw_path: Path | None = None,
+    raw_path: str | None = None,
     retention_days: int | None = None,
 ) -> None:
     """Delete raw partitions older than retention period.
@@ -133,7 +132,7 @@ def cleanup_old_partitions(
 
 def compact_all(
     now: datetime | None = None,
-    raw_path: Path | None = None,
+    raw_path: str | None = None,
 ) -> None:
     """Compact all raw tables and cleanup old partitions.
 

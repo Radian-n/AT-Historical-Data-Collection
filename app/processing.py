@@ -8,7 +8,6 @@ import os
 import logging
 from datetime import datetime, timedelta, timezone
 from logging import Logger
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import duckdb
@@ -50,7 +49,7 @@ def _write_processed(
     data: pa.Table,
     table_name: str,
     start_date: str,
-    processed_path: Path,
+    processed_path: str,
 ) -> None:
     """Write processed data to Delta Lake.
 
@@ -60,7 +59,7 @@ def _write_processed(
         data: PyArrow table to write.
         table_name: Name of the output table.
         start_date: Target date partition (YYYYMMDD).
-        processed_path: Path to processed tables directory.
+        processed_path: str to processed tables directory.
     """
     output_path: str = join_path(processed_path, table_name)
     partition_cols: list[str] = [Columns.START_DATE, Columns.ROUTE_ID]
@@ -85,8 +84,8 @@ def _write_processed(
 
 def process_vehicle_positions(
     now: datetime | None = None,
-    raw_path: Path | None = None,
-    processed_path: Path | None = None,
+    raw_path: str | None = None,
+    processed_path: str | None = None,
 ) -> None:
     """Process raw vehicle positions into deduplicated output.
 
@@ -139,8 +138,8 @@ def process_vehicle_positions(
 
 def process_trip_updates(
     now: datetime | None = None,
-    raw_path: Path | None = None,
-    processed_path: Path | None = None,
+    raw_path: str | None = None,
+    processed_path: str | None = None,
 ) -> None:
     """Process raw trip updates into latest-state output.
 
@@ -197,8 +196,8 @@ def process_trip_updates(
 
 def process_stop_time_events(
     now: datetime | None = None,
-    raw_path: Path | None = None,
-    processed_path: Path | None = None,
+    raw_path: str | None = None,
+    processed_path: str | None = None,
 ) -> None:
     """Process raw stop time updates into merged stop time events.
 
@@ -291,8 +290,8 @@ def process_stop_time_events(
 
 def process_all(
     now: datetime | None = None,
-    raw_path: Path | None = None,
-    processed_path: Path | None = None,
+    raw_path: str | None = None,
+    processed_path: str | None = None,
 ) -> None:
     """Process all raw tables into the processed layer.
 

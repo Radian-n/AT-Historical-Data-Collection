@@ -135,7 +135,7 @@ class Ingest(ABC):
     Required class attributes:
         schema: pa.Schema - PyArrow schema for the entity
         partition_cols: list[Columns] - Columns to partition by
-        write_path: Path - Output path for Delta Lake table
+        write_path: str - Output path for Delta Lake table
 
     Required methods:
         normalise(feed) -> list[dict]
@@ -171,7 +171,7 @@ class Ingest(ABC):
         return len(rows)
 
     def write_data(
-        self, data: pa.Table, partition_cols: list[str], path: Path | str
+        self, data: pa.Table, partition_cols: list[str], path: str | str
     ) -> None:
         """Write table to Delta Lake with partitioning."""
         write_deltalake(

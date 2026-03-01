@@ -280,7 +280,7 @@ class StaticDataIngest(ABC):
 
     Instance attributes (set in __init__):
         csv_filename: str - Name of CSV file in GTFS zip (name + ".txt")
-        write_path: Path - Output path for Delta Lake table
+        write_path: str - Output path for Delta Lake table
     """
 
     name: ClassVar[str]
@@ -395,7 +395,7 @@ class StaticDataIngest(ABC):
         self,
         data: pa.Table,
         partition_cols: list[str],
-        path: Path | str,
+        path: str | str,
         feed_info: FeedInfo,
     ) -> None:
         """Write table to Delta Lake, overwriting existing data for same dates.
