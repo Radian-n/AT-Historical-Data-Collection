@@ -59,14 +59,29 @@ Optional settings:
 
 ### Usage
 
-```bash
-uv run python main.py
-```
-
 The application runs continuously with three scheduled tasks:
 - **Realtime ingest** (every 30s): Polls API and writes to raw layer
 - **Compaction** (hourly): Consolidates files and enforces retention
 - **Processing** (daily): Transforms raw data into deduplicated outputs
+
+The app can be run locally as is, or via docker. Docker is reccomended, 
+as the ingestion app is deployed via docker container.
+
+#### Local
+
+```bash
+uv run python main.py
+```
+
+#### Docker
+
+```bash
+docker compose build
+```
+
+```bash
+docker compose up
+```
 
 ## Data Storage
 
