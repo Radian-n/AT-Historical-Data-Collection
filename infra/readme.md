@@ -16,7 +16,10 @@ sudo usermod -aG docker $USER
 # Log out and back in
 ```
 
-Deploy Initial Application:
+Deploy watcher:
+
+This runs the docker-compose app that watches the container registry. 
+When a new release is made, the data collection app is gracefully closed and then the new version of the app is kickstarted.
 
 ```bash
 mkdir -p /opt/at-collector && cd /opt/at-collector
@@ -32,11 +35,45 @@ nano .env
 docker compose up -d
 ```
 
+# Re-start application
+
+To restart the watcher application:
+
+access the droplet console
+
+```bash
+# Move to directory
+cd /opt/at-collector
+
+# Run watcher
+docker compose up -d
+```
+
+# Useful commands
+
+```bash
+# See watchtower logs
+docker logs -f watchtower
+
+# See AT Historical Data Collection logs
+docker logs -f at-collector
+
+# See container SHA for data collector. Match against SHA in container registry
+docker inspect at-collector | grep Image
+
+# See running containers
+docker ps
+
+# See container stats
+docker stats
+```
+
+
 # Deployment Workflow
 
 1. Make changes to code locally
 2. Commit and push to GitHub
-3. Create a release/tag: `git tag v1.0.0 && git push --tags`
+3. Create a release/tag. Github > Create Release > Create tag `v*.*.*`
 4. GitHub Actions builds and pushes image to ghcr.io
 5. Watchtower on VPS detects new image within 5 minutes
 6. Container automatically restarts with new version
@@ -44,14 +81,17 @@ docker compose up -d
 
 # R2
 
-To delete an R2 bucket's contents:
+To delete an R2 bucket's contents. On your local machine, install rclone, and 
+configure the remote repository.
+
+Then run the following to delete a bucket's contents:
 
 ```bash
-rclone delete r2:at-gtfs-data
+rclone delete r2:test-at-gtfs-data
 ```
 
 
-### Access Data for Analysis (from anywhere)
+# Access Data for Analysis (from anywhere)
 ```python
 # On your local machine - no VPS access needed!
 from deltalake import DeltaTable
@@ -76,3 +116,4 @@ df = pl.read_delta(
     storage_options=storage_options
 )
 ```
+

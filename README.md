@@ -3,6 +3,8 @@
 Collects real-time and static GTFS data from the Auckland Transport API and
 stores it in Delta Lake tables for historical analysis.
 
+The ingestion application is deployed on a DigitalOcean VPS, and the data is stored on Cloudflare R2.
+
 ## Features
 
 - Collects vehicle positions, trip updates, and stop time updates from AT's
@@ -310,6 +312,10 @@ df = pd.read_parquet(
 ```
 
 ## Technical Reference
+
+### Setting Up the App in Production
+
+See the content in `infra/readme.md`
 
 ### API Rate Limits
 
