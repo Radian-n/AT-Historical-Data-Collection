@@ -155,7 +155,7 @@ class GTFSStaticFetcher:
     """
 
     url: ClassVar[str] = GTFS_STATIC_URL
-    metadata_file: ClassVar[str] = METADATA_PATH
+    metadata_file: ClassVar[str] = join_path(METADATA_PATH, "static_metadata.json")
 
     def __init__(self) -> None:
         self.log = logging.getLogger(f"{self.__class__.__name__}")
